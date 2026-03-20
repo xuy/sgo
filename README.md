@@ -24,20 +24,11 @@ You can't backpropagate through an LLM. But you can ask it: *"what would change 
 
 ## Quickstart
 
-### As a Claude Code skill
+Tell your coding agent:
 
-If you use [Claude Code](https://code.claude.com), install as a skill for interactive, guided runs:
+> *"Install the SGO skill from https://github.com/xuy/sgo"*
 
-```bash
-# Clone into your skills directory
-mkdir -p ~/.claude/skills
-cp -r . ~/.claude/skills/sgo
-
-# Or symlink
-ln -s "$(pwd)" ~/.claude/skills/sgo
-```
-
-Then invoke:
+It will clone the repo, set up the skill, and install dependencies. Then:
 
 ```
 /sgo                              # Start interactive pipeline
@@ -45,14 +36,28 @@ Then invoke:
 /sgo "optimize my landing page"   # Start from a description
 ```
 
-The skill walks you through each phase interactively — asking what you're optimizing, who your audience is, running evaluations, probing counterfactuals, and comparing runs.
+The skill walks you through each phase — asking what you're optimizing, who your audience is, running evaluations, probing counterfactuals, and comparing runs over time.
 
-### As standalone scripts
+### Manual install
+
+<details>
+<summary>If you prefer to install manually</summary>
+
+**As a Claude Code skill:**
 
 ```bash
-# Setup
-cp .env.example .env              # Add your LLM API key
-uv sync                           # Install dependencies
+git clone https://github.com/xuy/sgo.git ~/.claude/skills/sgo
+cd ~/.claude/skills/sgo
+cp .env.example .env   # Add your LLM API key
+uv sync
+```
+
+**As standalone scripts (no skill):**
+
+```bash
+git clone https://github.com/xuy/sgo.git && cd sgo
+cp .env.example .env
+uv sync
 uv run python scripts/setup_data.py   # Download Nemotron personas (once, ~2GB)
 
 # Build cohort
@@ -74,6 +79,8 @@ uv run python scripts/counterfactual.py \
 # Compare runs
 uv run python scripts/compare.py --runs v1 v2
 ```
+
+</details>
 
 ---
 
