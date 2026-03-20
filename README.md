@@ -1,102 +1,75 @@
-# Semantic Gradient Optimization
+# SGO — Semantic Gradient Optimization
 
-Optimize anything you control against a population of evaluators — using LLMs as non-differentiable scoring functions and counterfactual probes as gradient estimators.
+You're launching a product. You think the landing page is good. But **who have you actually asked?**
+
+You could run a survey — but that takes weeks and you'd need to find the right people. You could ask an LLM — but one LLM opinion isn't a market. You could A/B test — but you need traffic first, and you don't know *what* to test.
+
+**SGO lets you ask 50 realistic people what they think — in 3 minutes, for $0.10.**
+
+It builds a representative panel of evaluators from census-grounded synthetic personas, has each one score your entity from their unique perspective, then probes *"what would change your mind?"* to compute a **semantic gradient** — a priority-ranked list of what to fix first.
 
 ```
-      θ (what you control)           x (who evaluates)
-      ┌──────────────┐              ┌───────────────┐
-      │ Your entity  │              │ Evaluator     │
-      │ - attributes │              │ persona       │
-      │ - framing    │              │ - values      │
-      │ - signals    │              │ - needs       │
-      └──────┬───────┘              └──────┬────────┘
-             └──────────┬──────────────────┘
-                        ▼
-               ┌──────────────────┐
-               │  f(θ, x) → score │  LLM as black-box evaluator
-               │  + reasoning     │  (non-differentiable)
-               │  + attractions   │
-               │  + concerns      │
-               └──────────────────┘
+You: "Here's my landing page. Here's my target market."
+
+SGO: "47 evaluators scored you. Avg 5.3/10.
+      Solo devs love it (7.2). Enterprise is blocked (3.1).
+      #1 concern: no SOC2. #2: no free tier.
+
+      Gradient:
+        +2.1  Add self-hosted option
+        +1.8  Add free tier           ← biggest universal win
+        +1.4  Get SOC2 certified
+        +0.6  Drop price              ← not actually the blocker"
 ```
 
-You can't backpropagate through an LLM. But you can ask it: *"what would change if θ were different?"* — which is the same information as a gradient, expressed in natural language.
+Works for anything someone evaluates: products, resumes, pitches, policies, profiles.
 
-## Quickstart
+## Install
 
 Tell your coding agent:
 
 > *"Install the SGO skill from https://github.com/xuy/sgo"*
 
-It will clone the repo, set up the skill, and install dependencies. Then:
+Then run:
 
 ```
-/sgo                              # Start interactive pipeline
+/sgo                              # Interactive — it asks what you're optimizing
 /sgo entities/my_product.md       # Start with an existing entity
 /sgo "optimize my landing page"   # Start from a description
 ```
 
-The skill walks you through each phase — asking what you're optimizing, who your audience is, running evaluations, probing counterfactuals, and comparing runs over time.
-
-### Manual install
-
 <details>
-<summary>If you prefer to install manually</summary>
-
-**As a Claude Code skill:**
+<summary>Manual install</summary>
 
 ```bash
+# As a Claude Code skill
 git clone https://github.com/xuy/sgo.git ~/.claude/skills/sgo
-cd ~/.claude/skills/sgo
-cp .env.example .env   # Add your LLM API key
-uv sync
-```
+cd ~/.claude/skills/sgo && cp .env.example .env && uv sync
 
-**As standalone scripts (no skill):**
-
-```bash
+# Or standalone
 git clone https://github.com/xuy/sgo.git && cd sgo
-cp .env.example .env
+cp .env.example .env   # Add your LLM API key (any OpenAI-compatible provider)
 uv sync
 uv run python scripts/setup_data.py   # Download Nemotron personas (once, ~2GB)
-
-# Build cohort
-uv run python scripts/persona_loader.py \
-  --filters '{"state": "CA", "age_min": 25, "age_max": 50}' \
-  --output data/filtered.json
-
-uv run python scripts/stratified_sampler.py \
-  --input data/filtered.json --total 50 --output data/cohort.json
-
-# Evaluate
-uv run python scripts/evaluate.py \
-  --entity entities/my_product.md --cohort data/cohort.json --tag v1
-
-# Probe counterfactuals
-uv run python scripts/counterfactual.py \
-  --tag v1 --changes data/changes.json
-
-# Compare runs
-uv run python scripts/compare.py --runs v1 v2
 ```
 
 </details>
 
 ---
 
-## The Problem
+## How It Works
 
-You have an entity you control: a product page, a resume, a pitch, a profile. A population evaluates it. You want to know:
+### The idea in 30 seconds
 
-1. **Evaluate** — Where do I stand? Which segments are receptive vs. hostile?
-2. **Gradient** — What single change would improve my score the most?
-3. **Search** — Which evaluators are the best fit for what I'm offering?
+You have something you control ($\theta$) and people who evaluate it ($x$). You want to know: **what do they think, and what would change their mind?**
 
-All three require running `f(θ, x)` — but the function is an LLM role-playing as evaluator `x`, which is non-differentiable, stochastic, and expensive. This framework makes it tractable.
+An LLM can role-play as any evaluator given a rich persona. It can't give you $\frac{\partial f}{\partial \theta}$ — but it can answer *"what would change if $\theta$ were different?"*, which is the same information expressed in natural language.
 
----
+$$f(\theta, x) \;\rightarrow\; \text{score} + \text{reasoning} + \text{attractions} + \text{concerns}$$
 
-## The Pipeline
+where $\theta$ is your entity, $x$ is an evaluator persona, and $f$ is an LLM inhabiting $x$'s perspective.
+
+### The pipeline
 
 ```
 ┌──────────┐    ┌──────────┐    ┌───────────┐    ┌─────────────┐    ┌──────────┐
@@ -106,91 +79,29 @@ All three require running `f(θ, x)` — but the function is an LLM role-playing
 └──────────┘    └──────────┘    └───────────┘    └─────────────┘    └──────────┘
 ```
 
-### Step 1 — Build the Entity (θ)
+**Step 1 — Entity.** Write down $\theta$ — what an evaluator would see. A landing page, a resume, a pitch deck.
 
-The thing you're optimizing expressed as a document an evaluator would see.
+**Step 2 — Cohort.** Build $\{x_i\}$ — a representative panel of 30–80 evaluators, stratified across dimensions that matter. Keep this fixed across runs so $\Delta\text{score}$ is attributable to $\Delta\theta$, not different evaluators.
 
-| Domain | θ | Format |
-|--------|---|--------|
-| Product | Landing page + pricing | Feature list, positioning, pricing table |
-| Resume | CV + cover letter | Role-targeted summary |
-| Pitch | Investor deck | Problem → solution → traction → ask |
-| Policy | Proposed regulation | Summary + projected impact |
-| Dating | App profile | Bio, prompts, key facts |
+**Step 3 — Evaluate.** Compute $f(\theta, x_i)$ for all $i$. Each call produces a 1–10 score, attractions, concerns, dealbreakers, and reasoning. Aggregate by segment.
 
-**Rule**: θ should contain only what a real evaluator would see. No hidden context.
+**Step 4 — Counterfactual probe.** For the "movable middle" ($\text{score} \in [4, 7]$), ask: *"if $\theta$ changed by $\Delta_j$, what's your new score?"* This produces the Jacobian $J_{ij} = f(\theta + \Delta_j, x_i) - f(\theta, x_i)$. Column means are your semantic gradient.
 
-### Step 2 — Build the Cohort ({xᵢ})
+**Step 5 — Act and re-evaluate.** Apply $\Delta_{\text{best}}$. Re-run. Compare. Repeat.
 
-A stratified, representative set of evaluators. This is the most important step — bad cohort, bad results.
+---
 
-```
-Population (large)
-    │
-    ▼
-┌────────────────────────┐
-│  Stratified Sampler    │
-│                        │
-│  Dimensions:           │
-│  - Segment A           │  e.g., company size, age bracket
-│  - Segment B           │  e.g., role, education level
-│  - Segment C           │  e.g., budget, geography
-│                        │
-│  Allocation:           │
-│  - Min 1 per stratum   │
-│  - Proportional fill   │
-│  - Within-stratum      │
-│    diversity            │
-└──────────┬─────────────┘
-           ▼
-    Cohort: 30–80 evaluators
-    (deterministic seed, fixed across runs)
-```
+## The Semantic Gradient
 
-**Key principle**: The cohort is the control group. Keep it fixed across runs so deltas are attributable to θ changes, not cohort variation.
+The core contribution. You can't backpropagate through an LLM, but you can estimate the gradient via counterfactual probes.
 
-See: [The Seeding Problem](#the-seeding-problem) for why persona source matters.
+For each evaluator $x_i$ in the movable middle, ask:
 
-### Step 3 — Evaluate: f(θ, xᵢ)
+> *"You scored $\theta$ at 5/10 with concerns $\{C_1, C_2\}$. If $\theta$ changed by $\Delta_j$, what's the new score?"*
 
-For each evaluator, the LLM inhabits their persona and scores θ.
+This produces the **Jacobian matrix** $J$:
 
-```
-┌────────────────────────────────────────────┐
-│  LLM Evaluation Call                       │
-│                                            │
-│  System: "You are {persona}. Evaluate      │
-│           this {entity} from your          │
-│           perspective."                    │
-│                                            │
-│  Input:  persona(xᵢ) + entity(θ)          │
-│                                            │
-│  Output (structured JSON):                 │
-│    score: 1–10                             │
-│    action: positive / neutral / negative   │
-│    attractions: [what works]               │
-│    concerns: [what doesn't]                │
-│    dealbreakers: [hard no's]               │
-│    reasoning: natural language             │
-└────────────────────────────────────────────┘
-```
-
-**Analysis**: Score distribution by segment. Common attractions, common concerns, dealbreakers. Which types love it, which don't.
-
-### Step 4 — Counterfactual Probe (Semantic Gradient)
-
-The core contribution. For evaluators in the **movable middle** (scored 4–7: not sold, not lost), ask:
-
-```
-"You scored θ at 5/10 with concerns {concerns}.
- If θ changed in these ways, estimate the new score."
-
- Change 1: {Δ₁ description}  → new score? why?
- Change 2: {Δ₂ description}  → new score? why?
- ...
-```
-
-This produces the **Jacobian matrix** — evaluators × changes → score deltas:
+$$J_{ij} = f(\theta + \Delta_j,\; x_i) - f(\theta,\; x_i)$$
 
 ```
               Δ₁      Δ₂      Δ₃      Δ₄      Δ₅
@@ -198,119 +109,51 @@ This produces the **Jacobian matrix** — evaluators × changes → score deltas
   x₂         +1      +3      -1      +2      +4
   x₃          0      +1      +2      +1      +2
   x₄         +1      +2       0       0      +3
-  ─────────────────────────────────────────────────
-  avg Δ      +1.0    +1.8    +0.3    +1.0    +3.0   ← semantic gradient
-  % helped    75%     90%     50%     75%    100%
-  % hurt       0%      5%     15%      0%      0%
 ```
 
-**Reading the gradient**:
-- **Columns** = candidate changes, ranked by avg Δ
-- **Rows** = per-evaluator responses (inspect for segment patterns)
-- **avg Δ** = expected impact across the population
-- **% hurt** = risk of regression (changes that help some but alienate others)
+The **semantic gradient** is the column mean:
 
-#### Change Taxonomy
+$$\nabla_j = \frac{1}{n}\sum_{i} J_{ij}$$
+
+Ranked by $\nabla_j$ descending, this tells you what to fix first. Also track $\\%\text{hurt}$ — changes that help most but alienate some are tradeoffs, not wins.
+
+Read it like this:
+- **Columns** = candidate changes, ranked by $\nabla_j$
+- **Rows** = per-evaluator responses (inspect for segment-specific patterns)
+- **$\nabla_j$** = expected score improvement across the population
+- **% hurt** = risk — does this change alienate some segment?
 
 Only probe changes you'd actually make:
 
-```
-┌──────────────────────────┬────────────────────────────────┐
-│  Presentation            │ Framing, tone, emphasis,       │
-│  (freely optimizable)    │ what to highlight or hide      │
-├──────────────────────────┼────────────────────────────────┤
-│  Actionable              │ Real changes with real cost:   │
-│  (optimizable with cost) │ features, pricing, location    │
-├──────────────────────────┼────────────────────────────────┤
-│  Fixed                   │ Can't change: history, physics,│
-│  (constraints)           │ sunk costs, market size        │
-├──────────────────────────┼────────────────────────────────┤
-│  Boundary                │ Won't change: values, ethics,  │
-│  (non-negotiable)        │ identity, mission              │
-└──────────────────────────┴────────────────────────────────┘
-```
-
-The gradient should only have columns for the first two rows.
-
-### Step 5 — Act and Re-evaluate
-
-Apply the highest-leverage change. Re-run. Compare.
-
-```
-Run 1: θ₀                → avg 5.3
-Run 2: θ₁ = θ₀ + Δ_best  → avg 6.1  ← verified
-Run 3: θ₂ = θ₁ + Δ_next  → avg 7.0  ← compounding
-```
-
-```
-┌──────────────────────────────────────────────────────┐
-│  Cross-Run Comparison                                │
-│                                                      │
-│  Tag             Date      Avg   Positive  Concerns  │
-│  ────────────────────────────────────────────────────│
-│  v1_baseline     Mar 26    5.3   0%        price, X  │
-│  v2_free_tier    Jun 26    6.1   12%       X         │
-│  v3_plus_trust   Sep 26    7.0   28%       (none)    │
-│                                                      │
-│  Attractions gained: {free tier, trust signals}      │
-│  Concerns resolved:  {price barrier, credibility}    │
-└──────────────────────────────────────────────────────┘
-```
+| Category | Examples | Probe? |
+|----------|---------|--------|
+| **Presentation** — framing, tone, emphasis | Rewrite headline, reorder features | Yes |
+| **Actionable** — real changes with real cost | Add free tier, get SOC2, relocate | Yes |
+| **Fixed** — can't change | History, physics, sunk costs | No |
+| **Boundary** — won't change | Values, ethics, mission | No |
 
 ---
 
 ## The Seeding Problem
 
-Every evaluation needs personas. Where they come from determines whether results generalize or hallucinate.
+The quality of your results depends almost entirely on where your evaluator personas come from.
 
-### Three seeding approaches
+| Approach | What happens | Problem |
+|----------|-------------|---------|
+| **KG extraction** — pull entities from a document | You get the document's cast of characters | Extraction bias: "Y Combinator" becomes an evaluator, but the mid-market IT manager doesn't |
+| **Ad hoc LLM generation** — "generate 50 diverse personas" | You get 5–6 archetypes with varied surface details | Mode collapse: over-indexes on coastal, educated, tech-adjacent. Can't audit what's missing |
+| **Census-grounded synthetic** — personas generated against real demographic constraints | You get a population that mirrors reality | The 28-year-old construction worker exists because census data says that cell is populated |
 
-**1. Knowledge graph extraction**
+SGO uses [NVIDIA Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA) by default — 1M personas with age, occupation, education, geography, and marital status matching US census marginals. When the dataset doesn't fit your domain (e.g., B2B buyer personas), SGO falls back to LLM generation with an explicit warning.
 
-Extract entities from a document, turn each entity into an agent.
-
-```
-Document → LLM extracts entities → each entity becomes an evaluator
-```
-
-Problem: extraction bias. The LLM decides what's "important" — skewing toward named, prominent, or dramatic entities. A document about a startup might produce "Y Combinator" and "competitor CEO" as evaluators, but miss the mid-market IT manager who's your actual buyer. You get the document's cast of characters, not a representative market.
-
-**2. Ad hoc LLM generation**
-
-Ask an LLM to "generate 50 diverse buyer personas."
-
-```
-Prompt: "Generate 50 diverse personas" → LLM imagines 50 people
-```
-
-Problem: mode collapse and invisible gaps. LLMs default to 5–6 archetypes they've seen in training data, then vary surface details. "Diverse" means coastal, college-educated, tech-adjacent — because that's what the training data over-represents. You can't audit what's missing because there's no ground-truth distribution to compare against. The LLM doesn't know what it doesn't know.
-
-**3. Census-grounded synthetic datasets**
-
-Personas generated against real demographic constraints before narrative generation.
-
-```
-Census distributions → demographic skeleton → LLM fleshes out narrative
-```
-
-Example: [NVIDIA Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA) — 1M personas where age, occupation, education, geography, and marital status match US census marginals. The 28-year-old construction worker in suburban Illinois exists because census data says that cell is populated, not because an LLM thought it was an interesting character.
-
-### Why it matters
-
-| Property | KG extraction | Ad hoc LLM | Census-grounded |
-|----------|:---:|:---:|:---:|
-| Covers rare demographics | No | No | Yes |
-| Auditable distribution | No | No | Yes |
-| Grounded in real-world proportions | No | No | Yes |
-| Repeatable (deterministic) | Depends | No | Yes |
-| Evaluator independence | Partial | Weak | Strong |
-| Rich persona narrative | Weak | Medium | Strong |
-
-The same principle applies in experimental science: **define the population before the measurement, not after.** Census-grounded seeding is the synthetic equivalent of random sampling from a known population. Ad hoc generation is the equivalent of convenience sampling — fast, but the results only generalize to the LLM's imagination.
+The principle: **define the population before the measurement, not after.** Same reason randomized controlled trials beat observational studies.
 
 ---
 
-## Worked Example: SaaS Product Launch
+## Worked Example
+
+<details>
+<summary>SaaS product launch — full walkthrough</summary>
 
 ### Setup
 
@@ -320,7 +163,7 @@ xᵢ = 40 buyer personas stratified by company size, role, budget, tech stack
 f  = "As this buyer, would you sign up? Score 1–10."
 ```
 
-### Entity (θ)
+### Entity
 
 ```markdown
 Acme API — Data pipelines that just work.
@@ -330,16 +173,6 @@ Acme API — Data pipelines that just work.
 - 14-day trial → $99/mo starter
 - Seed-funded, 3-person team
 ```
-
-### Cohort
-
-| Segment | Count | Example |
-|---------|-------|---------|
-| Solo dev, bootstrap | 8 | Python freelancer, $50/mo budget |
-| Startup IC engineer | 8 | Full-stack at 20-person Series A |
-| Scaleup eng manager | 8 | Data team lead, 50-person company |
-| Enterprise CTO | 8 | VP Eng at 500+ company, SOC2 required |
-| Data analyst, non-technical | 8 | Business analyst, uses no-code tools |
 
 ### Evaluation results
 
@@ -362,88 +195,76 @@ Rank  avg Δ  Change
   6   +0.6   Drop price to $49/mo
 ```
 
-Insight: **Price isn't the blocker. Trust and deployment model are.** The free tier helps universally. Self-hosted unlocks enterprise but is expensive to build. SOC2 is high-leverage for its cost.
+**Insight**: Price isn't the blocker. Trust and deployment model are.
 
-### Action
+### Iterate
 
-Ship the free tier (Δ₂). Re-evaluate. Avg score moves from 5.3 → 6.1. Then pursue SOC2. Avg moves to 7.0. Each step verified against the same cohort.
+```
+v1_baseline     5.3 avg   0% positive    price, trust
+v2_free_tier    6.1 avg  12% positive    trust
+v3_plus_soc2    7.0 avg  28% positive    (none)
+```
+
+Each step verified against the same cohort. Concerns resolved one by one.
+
+</details>
+
+---
+
+## Applies To
+
+| Domain | Entity (θ) | Evaluators | Stratify by |
+|--------|-----------|------------|-------------|
+| Product | Landing page, pricing | Buyer personas | Company size, role, budget, stack |
+| Resume | CV + cover letter | Hiring managers | Company type, seniority, technical depth |
+| Pitch | Investor deck | VC / angel personas | Stage, sector, check size |
+| Policy | Proposed regulation | Stakeholder personas | Role, income, geography |
+| Content | Blog post, video | Reader personas | Expertise, industry, intent |
+| Dating | App profile | Population personas | Age, life stage, education, geography |
 
 ---
 
 ## Project Structure
 
 ```
-├── README.md               # This file — framework and theory
+├── README.md               # This file
 ├── AGENT.md                # Execution guide for AI agents
-├── SKILL.md                # Claude Code skill definition (copy to ~/.claude/skills/sgo/)
-├── LICENSE                 # CC-BY-4.0
-├── pyproject.toml
-├── .env.example
+├── SKILL.md                # Claude Code skill (copy to ~/.claude/skills/sgo/)
+├── pyproject.toml          # Dependencies
+├── .env.example            # API key template
 ├── scripts/
-│   ├── setup_data.py       # Download Nemotron 1M personas (once)
-│   ├── persona_loader.py   # Load + filter from dataset
-│   ├── stratified_sampler.py # Build diverse cohort
+│   ├── setup_data.py       # Download Nemotron personas (once)
+│   ├── persona_loader.py   # Load + filter
+│   ├── stratified_sampler.py
 │   ├── generate_cohort.py  # LLM-generate personas (fallback)
 │   ├── evaluate.py         # f(θ, x) scorer
 │   ├── counterfactual.py   # Semantic gradient probe
 │   └── compare.py          # Cross-run diff
-├── templates/
-│   ├── entity_product.md
-│   ├── entity_resume.md
-│   ├── entity_pitch.md
-│   └── changes.json        # Counterfactual changes template
-├── entities/               # Your θ documents (gitignored)
-├── data/                   # Cohorts and filtered data (gitignored)
+├── templates/              # Entity + changes templates
+├── entities/               # Your documents (gitignored)
+├── data/                   # Cohorts (gitignored)
 └── results/                # Run outputs (gitignored)
-    └── <tag>/
-        ├── meta.json
-        ├── raw_results.json
-        ├── analysis.md
-        └── counterfactual/
-            ├── raw_probes.json
-            └── gradient.md
 ```
 
----
+## Limitations
 
-## Properties
-
-**Why it works**:
-- LLMs are good at perspective-taking with rich persona context
-- Structured JSON output makes results quantitatively comparable across runs
-- Counterfactual probes extract gradient-equivalent information without differentiation
-- Stratified cohorts prevent optimizing for one segment at others' expense
-
-**Where it breaks**:
-- LLMs have biases (over-polite, culturally narrow, recency-biased)
-- Synthetic personas flatten real human complexity
-- f is stochastic — same inputs can produce different scores
-- Compound changes may not decompose linearly (interaction effects)
-- Social dynamics (evaluators influencing each other) are not captured
-
-**Mitigations**:
-- Run 2–3x and average for important decisions
-- Use temperature=0 for deterministic comparisons
-- Test compound changes explicitly, don't assume linearity
-- Validate with real-world signal when available (A/B tests, user interviews)
-- Keep the cohort fixed and seeded for reproducibility
-
----
+- **LLM bias** — evaluators are only as unbiased as the model doing the role-play. Treat as directional signal, not ground truth.
+- **Stochastic** — same inputs can produce different scores. Average over 2–3 runs for important decisions, or use temperature=0.
+- **No social dynamics** — evaluators score independently. Real-world opinions are influenced by what others think.
+- **Compound effects** — individual deltas may not sum linearly. Test compound changes explicitly.
+- **Validate with reality** — this is synthetic market research, not a substitute for real user feedback. Use it to generate hypotheses, then confirm with A/B tests or interviews.
 
 ## Notation
 
 | Symbol | Meaning |
 |--------|---------|
-| θ | Entity you control |
-| x | Evaluator persona |
-| {xᵢ} | Evaluation cohort |
-| f(θ, x) | LLM evaluation → score + reasoning |
-| Δⱼ | Hypothetical change to θ |
-| ∂f/∂Δⱼ | Score delta from change j (semantic gradient) |
-| J | Jacobian: evaluators × changes → deltas |
-| Σᵢ ∂f/∂Δⱼ | Aggregate gradient: total impact of change j |
-
----
+| $\theta$ | Entity you control |
+| $x_i$ | Evaluator persona |
+| $\{x_i\}$ | Evaluation cohort (fixed across runs) |
+| $f(\theta, x)$ | LLM evaluation $\rightarrow$ score + reasoning |
+| $\Delta_j$ | Hypothetical change to $\theta$ |
+| $J_{ij}$ | Score delta: evaluator $i$, change $j$ |
+| $\nabla_j = \frac{1}{n}\sum_i J_{ij}$ | Semantic gradient: avg impact of change $j$ |
 
 ## License
 
