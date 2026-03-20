@@ -1,7 +1,8 @@
 """
 Download and cache the Nemotron-Personas-USA dataset.
 
-Downloads 1M synthetic US personas (~2GB) from HuggingFace to ~/Data/nvidia/Nemotron-Personas-USA/.
+Downloads 1M synthetic US personas (~2GB) from HuggingFace.
+Default location: <project_root>/data/nemotron/
 Only runs once — subsequent calls detect the cached dataset and skip.
 
 Usage:
@@ -13,7 +14,8 @@ import argparse
 from pathlib import Path
 from datasets import load_dataset, load_from_disk
 
-DEFAULT_DATA_DIR = Path.home() / "Data" / "nvidia" / "Nemotron-Personas-USA"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data" / "nemotron"
 
 
 def setup(data_dir: Path = DEFAULT_DATA_DIR):

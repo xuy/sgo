@@ -35,7 +35,7 @@ If `.env` doesn't exist, copy `.env.example` and ask the user to fill it in. Do 
 
 ### Check data
 
-If `~/Data/nvidia/Nemotron-Personas-USA/dataset_info.json` exists, the persona dataset is ready. If not, run:
+If `data/nemotron/dataset_info.json` exists (relative to the project root), the persona dataset is ready. If not, run:
 
 ```bash
 uv run python scripts/setup_data.py
@@ -116,7 +116,7 @@ uv run python scripts/evaluate.py \
 
 **Present results to the user**:
 
-1. Overall score distribution (avg, swipe-right %, swipe-left %)
+1. Overall score distribution (avg, positive %, negative %)
 2. Breakdown by each stratification dimension
 3. Top 5 attractions (aggregated)
 4. Top 5 concerns (aggregated)

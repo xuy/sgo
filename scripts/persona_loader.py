@@ -21,7 +21,8 @@ import argparse
 from pathlib import Path
 from datasets import load_from_disk
 
-DEFAULT_DATA_DIR = Path.home() / "Data" / "nvidia" / "Nemotron-Personas-USA"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data" / "nemotron"
 
 MBTI_TYPES = [
     "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
