@@ -30,12 +30,16 @@ Anything someone else evaluates.
 
 | What you're optimizing | Who evaluates it | What you learn |
 |----------------------|-----------------|---------------|
-| **Product** — landing page, pricing, positioning | Buyer personas across company sizes, roles, budgets | Which segments convert, which are blocked, and why |
-| **Resume** — CV + cover letter for a target role | Hiring managers at startups, enterprises, agencies | What stands out, what's a red flag, what to lead with |
-| **Pitch** — investor deck | VCs and angels at different stages and sectors | Whether the story lands, what questions they'd ask |
-| **Policy** — proposed regulation or internal change | Stakeholders: residents, businesses, employees | Who supports it, who opposes, what compromise works |
-| **Content** — blog post, video, talk proposal | Readers at different expertise levels | Whether it hits the right level, what's confusing |
-| **Profile** — dating, professional, public bio | Representative population sample | How different demographics perceive you |
+| **Product** — landing page, pricing | Buyer personas by company size, role, budget | Which segments convert, which are blocked, and why |
+| **Resume** — CV + cover letter | Hiring managers at startups vs. enterprises | What stands out, what's a red flag, what to lead with |
+| **Pitch** — investor deck | VCs and angels at different stages | Whether the story lands, what questions they'd ask |
+| **Policy** — proposed regulation | Stakeholders by role, income, geography | Who supports it, who opposes, what compromise works |
+| **Content** — blog post, video | Readers at different expertise levels | Whether it hits the right level, what's confusing |
+| **Profile** — dating, professional bio | Population sample by age, education, occupation | How different demographics perceive you |
+
+SGO ships with a 1M-person census-grounded dataset ([Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA)) that covers **age, sex, education, occupation, marital status, and US geography**. This works well out of the box for profiles, policy, and any consumer-facing evaluation.
+
+For specialized domains (B2B buyers, hiring managers, VCs), the dataset doesn't have fields like company size, seniority, or budget — so SGO generates those personas via LLM with explicit stratification constraints. The results are still useful, but see [limitations](#limitations) on LLM-generated panels vs. census-grounded ones.
 
 In each case, SGO tells you **where you stand**, **what's working**, **what's not**, and **what specific change would help the most** — broken down by audience segment.
 
