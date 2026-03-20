@@ -1,0 +1,12 @@
+[
+  {
+    "id": "change_1",
+    "label": "Short label for this change",
+    "description": "Detailed description of what changes. Be specific — the LLM needs to understand exactly what's different so it can re-evaluate from the persona's perspective."
+  },
+  {
+    "id": "change_2",
+    "label": "Another change",
+    "description": "Description of the second change."
+  }
+]
