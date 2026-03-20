@@ -37,9 +37,9 @@ Anything someone else evaluates.
 | **Content** — blog post, video | Readers at different expertise levels | Whether it hits the right level, what's confusing |
 | **Profile** — dating, professional bio | Population sample by age, education, occupation | How different demographics perceive you |
 
-SGO ships with a 1M-person census-grounded dataset ([Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA)) that covers **age, sex, education, occupation, marital status, and US geography**. This works well out of the box for profiles, policy, and any consumer-facing evaluation.
+SGO ships with a 1M-person census-grounded dataset ([Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA)) with structured demographics (age, sex, education, occupation, marital status, US geography) plus rich narrative fields — professional persona, skills and expertise, career goals, hobbies, cultural background, and personality. The narratives naturally encode things like seniority, industry, technical depth, and decision-making style, even though those aren't separate columns.
 
-For specialized domains (B2B buyers, hiring managers, VCs), the dataset doesn't have fields like company size, seniority, or budget — so SGO generates those personas via LLM with explicit stratification constraints. The results are still useful, but see [limitations](#limitations) on LLM-generated panels vs. census-grounded ones.
+This means most domains work out of the box — the LLM evaluates from the persona's full context, not just the demographic fields. For highly specialized panels (e.g., Series B VCs, enterprise procurement officers), SGO can generate personas via LLM with explicit stratification constraints. See [limitations](#limitations) on generated vs. census-grounded panels.
 
 In each case, SGO tells you **where you stand**, **what's working**, **what's not**, and **what specific change would help the most** — broken down by audience segment.
 
