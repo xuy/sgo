@@ -61,33 +61,27 @@ uv run python scripts/setup_data.py   # Download Nemotron personas (once, ~2GB)
 
 ### The idea in 30 seconds
 
-You have something you control ($\theta$) and people who evaluate it ($x$). You want to know: **what do they think, and what would change their mind?**
+You have something you control (your entity) and people who evaluate it. You want to know: **what do they think, and what would change their mind?**
 
-An LLM can role-play as any evaluator given a rich persona. It can't give you $\frac{\partial f}{\partial \theta}$ — but it can answer *"what would change if $\theta$ were different?"*, which is the same information expressed in natural language.
+An LLM can role-play as any evaluator given a rich persona. It can't give you a true derivative — but it can answer *"what would change if this were different?"*, which is the same information expressed in natural language.
 
-$$f(\theta, x) \;\rightarrow\; \text{score} + \text{reasoning} + \text{attractions} + \text{concerns}$$
+We call the entity **θ**, the evaluator **x**, and the LLM-as-evaluator **f**:
 
-where $\theta$ is your entity, $x$ is an evaluator persona, and $f$ is an LLM inhabiting $x$'s perspective.
+$$f(\theta, x) \to (\text{score},\; \text{reasoning},\; \text{attractions},\; \text{concerns})$$
 
 ### The pipeline
 
-```
-┌──────────┐    ┌──────────┐    ┌───────────┐    ┌─────────────┐    ┌──────────┐
-│ 1. Build │    │ 2. Build │    │ 3. Score  │    │ 4. Probe    │    │ 5. Act   │
-│ Entity   │───▶│ Cohort   │───▶│ f(θ, xᵢ) │───▶│ Counter-    │───▶│ & Re-    │
-│    θ     │    │  {xᵢ}    │    │ for all i │    │ factuals    │    │ evaluate │
-└──────────┘    └──────────┘    └───────────┘    └─────────────┘    └──────────┘
-```
+> **1. Entity** → **2. Cohort** → **3. Evaluate** → **4. Probe** → **5. Act & re-evaluate**
 
-**Step 1 — Entity.** Write down $\theta$ — what an evaluator would see. A landing page, a resume, a pitch deck.
+**Step 1 — Entity.** Write down θ — what an evaluator would see. A landing page, a resume, a pitch deck.
 
-**Step 2 — Cohort.** Build $\{x_i\}$ — a representative panel of 30–80 evaluators, stratified across dimensions that matter. Keep this fixed across runs so $\Delta\text{score}$ is attributable to $\Delta\theta$, not different evaluators.
+**Step 2 — Cohort.** Build a representative panel of 30–80 evaluators, stratified across dimensions that matter. Keep this fixed across runs so score changes are attributable to entity changes, not different evaluators.
 
-**Step 3 — Evaluate.** Compute $f(\theta, x_i)$ for all $i$. Each call produces a 1–10 score, attractions, concerns, dealbreakers, and reasoning. Aggregate by segment.
+**Step 3 — Evaluate.** Compute f(θ, x) for each evaluator. Each call produces a 1–10 score, attractions, concerns, dealbreakers, and reasoning. Aggregate by segment.
 
-**Step 4 — Counterfactual probe.** For the "movable middle" ($\text{score} \in [4, 7]$), ask: *"if $\theta$ changed by $\Delta_j$, what's your new score?"* This produces the Jacobian $J_{ij} = f(\theta + \Delta_j, x_i) - f(\theta, x_i)$. Column means are your semantic gradient.
+**Step 4 — Counterfactual probe.** For the "movable middle" (scores 4–7), ask: *"if θ changed in this specific way, what's your new score?"* This produces a Jacobian — evaluators × changes → score deltas. Column means are your semantic gradient.
 
-**Step 5 — Act and re-evaluate.** Apply $\Delta_{\text{best}}$. Re-run. Compare. Repeat.
+**Step 5 — Act and re-evaluate.** Apply the highest-leverage change. Re-run against the same cohort. Compare. Repeat.
 
 ---
 
@@ -95,33 +89,26 @@ where $\theta$ is your entity, $x$ is an evaluator persona, and $f$ is an LLM in
 
 The core contribution. You can't backpropagate through an LLM, but you can estimate the gradient via counterfactual probes.
 
-For each evaluator $x_i$ in the movable middle, ask:
+For each evaluator in the movable middle, ask:
 
-> *"You scored $\theta$ at 5/10 with concerns $\{C_1, C_2\}$. If $\theta$ changed by $\Delta_j$, what's the new score?"*
+> *"You scored this 5/10 with concerns X and Y. If it changed in this way, what's your new score?"*
 
-This produces the **Jacobian matrix** $J$:
+This produces a **Jacobian matrix** — each cell is the score delta for one evaluator and one change:
 
-$$J_{ij} = f(\theta + \Delta_j,\; x_i) - f(\theta,\; x_i)$$
+$$J_{ij} = f(\theta + \Delta_j, \; x_i) - f(\theta, \; x_i)$$
 
-```
-              Δ₁      Δ₂      Δ₃      Δ₄      Δ₅
-  x₁         +2      +1       0      +1      +3
-  x₂         +1      +3      -1      +2      +4
-  x₃          0      +1      +2      +1      +2
-  x₄         +1      +2       0       0      +3
-```
+| | Add free tier | Get SOC2 | Self-hosted | Open-core | Case studies |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Solo dev | +2 | +1 | 0 | +1 | +3 |
+| Startup EM | +1 | +3 | -1 | +2 | +4 |
+| Enterprise CTO | 0 | +1 | +2 | +1 | +2 |
+| Data analyst | +1 | +2 | 0 | 0 | +3 |
 
-The **semantic gradient** is the column mean:
+The **semantic gradient** is the column mean — the average impact of each change across the population:
 
 $$\nabla_j = \frac{1}{n}\sum_{i} J_{ij}$$
 
-Ranked by $\nabla_j$ descending, this tells you what to fix first. Also track $\\%\text{hurt}$ — changes that help most but alienate some are tradeoffs, not wins.
-
-Read it like this:
-- **Columns** = candidate changes, ranked by $\nabla_j$
-- **Rows** = per-evaluator responses (inspect for segment-specific patterns)
-- **$\nabla_j$** = expected score improvement across the population
-- **% hurt** = risk — does this change alienate some segment?
+Rank by this value descending: that's your priority list. Also track **% hurt** — changes that help most evaluators but alienate a segment are tradeoffs, not pure wins.
 
 Only probe changes you'd actually make:
 
@@ -213,7 +200,7 @@ Each step verified against the same cohort. Concerns resolved one by one.
 
 ## Applies To
 
-| Domain | Entity (θ) | Evaluators | Stratify by |
+| Domain | Entity | Evaluators | Stratify by |
 |--------|-----------|------------|-------------|
 | Product | Landing page, pricing | Buyer personas | Company size, role, budget, stack |
 | Resume | CV + cover letter | Hiring managers | Company type, seniority, technical depth |
@@ -258,13 +245,12 @@ Each step verified against the same cohort. Concerns resolved one by one.
 
 | Symbol | Meaning |
 |--------|---------|
-| $\theta$ | Entity you control |
-| $x_i$ | Evaluator persona |
-| $\{x_i\}$ | Evaluation cohort (fixed across runs) |
-| $f(\theta, x)$ | LLM evaluation $\rightarrow$ score + reasoning |
-| $\Delta_j$ | Hypothetical change to $\theta$ |
-| $J_{ij}$ | Score delta: evaluator $i$, change $j$ |
-| $\nabla_j = \frac{1}{n}\sum_i J_{ij}$ | Semantic gradient: avg impact of change $j$ |
+| θ | Entity you control |
+| x | Evaluator persona |
+| f(θ, x) | LLM evaluation → score + reasoning |
+| Δⱼ | Hypothetical change to θ |
+| Jᵢⱼ | Score delta for evaluator *i*, change *j* |
+| ∇ⱼ | Semantic gradient: mean of column *j* in the Jacobian |
 
 ## License
 
