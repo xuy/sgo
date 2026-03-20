@@ -22,6 +22,59 @@ Optimize anything you control against a population of evaluators — using LLMs 
 
 You can't backpropagate through an LLM. But you can ask it: *"what would change if θ were different?"* — which is the same information as a gradient, expressed in natural language.
 
+## Quickstart
+
+### As a Claude Code skill
+
+If you use [Claude Code](https://code.claude.com), install as a skill for interactive, guided runs:
+
+```bash
+# Clone into your skills directory
+mkdir -p ~/.claude/skills
+cp -r . ~/.claude/skills/sgo
+
+# Or symlink
+ln -s "$(pwd)" ~/.claude/skills/sgo
+```
+
+Then invoke:
+
+```
+/sgo                              # Start interactive pipeline
+/sgo entities/my_product.md       # Start with an existing entity
+/sgo "optimize my landing page"   # Start from a description
+```
+
+The skill walks you through each phase interactively — asking what you're optimizing, who your audience is, running evaluations, probing counterfactuals, and comparing runs.
+
+### As standalone scripts
+
+```bash
+# Setup
+cp .env.example .env              # Add your LLM API key
+uv sync                           # Install dependencies
+uv run python scripts/setup_data.py   # Download Nemotron personas (once, ~2GB)
+
+# Build cohort
+uv run python scripts/persona_loader.py \
+  --filters '{"state": "CA", "age_min": 25, "age_max": 50}' \
+  --output data/filtered.json
+
+uv run python scripts/stratified_sampler.py \
+  --input data/filtered.json --total 50 --output data/cohort.json
+
+# Evaluate
+uv run python scripts/evaluate.py \
+  --entity entities/my_product.md --cohort data/cohort.json --tag v1
+
+# Probe counterfactuals
+uv run python scripts/counterfactual.py \
+  --tag v1 --changes data/changes.json
+
+# Compare runs
+uv run python scripts/compare.py --runs v1 v2
+```
+
 ---
 
 ## The Problem
@@ -307,6 +360,42 @@ Insight: **Price isn't the blocker. Trust and deployment model are.** The free t
 ### Action
 
 Ship the free tier (Δ₂). Re-evaluate. Avg score moves from 5.3 → 6.1. Then pursue SOC2. Avg moves to 7.0. Each step verified against the same cohort.
+
+---
+
+## Project Structure
+
+```
+├── README.md               # This file — framework and theory
+├── AGENT.md                # Execution guide for AI agents
+├── SKILL.md                # Claude Code skill definition (copy to ~/.claude/skills/sgo/)
+├── LICENSE                 # CC-BY-4.0
+├── pyproject.toml
+├── .env.example
+├── scripts/
+│   ├── setup_data.py       # Download Nemotron 1M personas (once)
+│   ├── persona_loader.py   # Load + filter from dataset
+│   ├── stratified_sampler.py # Build diverse cohort
+│   ├── generate_cohort.py  # LLM-generate personas (fallback)
+│   ├── evaluate.py         # f(θ, x) scorer
+│   ├── counterfactual.py   # Semantic gradient probe
+│   └── compare.py          # Cross-run diff
+├── templates/
+│   ├── entity_product.md
+│   ├── entity_resume.md
+│   ├── entity_pitch.md
+│   └── changes.json        # Counterfactual changes template
+├── entities/               # Your θ documents (gitignored)
+├── data/                   # Cohorts and filtered data (gitignored)
+└── results/                # Run outputs (gitignored)
+    └── <tag>/
+        ├── meta.json
+        ├── raw_results.json
+        ├── analysis.md
+        └── counterfactual/
+            ├── raw_probes.json
+            └── gradient.md
+```
 
 ---
 
