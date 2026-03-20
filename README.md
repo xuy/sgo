@@ -111,13 +111,27 @@ The column averages tell you what to fix first. "Case studies" has the highest a
 
 ### What makes the panel realistic?
 
-SGO uses [NVIDIA Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA) — a dataset of 1 million synthetic Americans whose demographics (age, job, education, location, marital status) match real US census distributions. Each persona includes detailed narratives about their career, hobbies, values, and cultural background.
+SGO uses [NVIDIA Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA) — 1 million synthetic Americans whose demographics match real US census distributions. Each persona includes detailed narratives: professional background, skills, career goals, hobbies, cultural background, and personality.
 
 This matters because when you ask an LLM to "generate 50 diverse personas," you get 5–6 archetypes with surface variation — mostly coastal, college-educated, and tech-adjacent. You can't audit what's missing. Census-grounded personas give you the construction worker in suburban Illinois and the quilter in rural Texas, because census data says those people exist.
 
-The principle: **define the population before the measurement, not after.** Same reason clinical trials use random sampling, not convenience sampling.
+The principle: **define the population before the measurement, not after.**
 
-When the dataset doesn't fit your domain (e.g., B2B buyer personas for a niche product), SGO can generate personas via LLM — but flags the quality difference.
+### From general population to any domain
+
+Nemotron covers age, sex, education, occupation, geography, and marital status as structured fields — plus rich narratives about each person's career, skills, values, and lifestyle. That's enough to directly evaluate anything consumer-facing: products, profiles, content, policy.
+
+But what about domains the dataset doesn't explicitly cover — like "enterprise CTOs" or "Series B investors"? There are four ways to get there, from most grounded to most flexible:
+
+**1. Filter by what's already there.** A Nemotron persona with `occupation: software_developer`, `education: graduate`, `age: 38` and a professional narrative describing team leadership *is* a plausible engineering manager evaluating your developer tool. You just filter and let the narrative do the work.
+
+**2. Reframe the evaluation prompt.** Same persona, different lens. Instead of *"would you buy this?"*, ask *"you're evaluating this tool for your team — would you champion it internally?"* The persona's professional context, skills, and decision-making style naturally shape the answer.
+
+**3. Enrich with a situational overlay.** Add context that the persona doesn't have: *"You are [full Nemotron persona]. You work at a 50-person Series A startup. Your team's tooling budget is $2k/month. You've been burned by vendor lock-in before."* The demographic grounding stays real; the professional situation is augmented.
+
+**4. Generate from scratch, using Nemotron as a quality bar.** For truly specialized roles (VC partners, procurement officers, regulatory lawyers), generate personas via LLM — but use Nemotron personas as few-shot examples so the output matches the depth and internal consistency of the dataset. SGO's `generate_cohort.py` does this with an explicit warning about the quality tradeoff.
+
+Each step trades some census grounding for more domain specificity. For most use cases, steps 1–2 are enough.
 
 ---
 
