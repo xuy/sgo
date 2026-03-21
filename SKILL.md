@@ -71,9 +71,10 @@ uv run python scripts/persona_loader.py \
   --filters '{"sex": "...", "state": "...", "age_min": N, "age_max": N}' \
   --output data/filtered.json
 
-# Stratified sample
+# Stratified sample (--entity enables LLM-based occupation bucketing)
 uv run python scripts/stratified_sampler.py \
   --input data/filtered.json \
+  --entity entities/<entity>.md \
   --total 50 \
   --output data/cohort.json
 ```

@@ -89,9 +89,8 @@ Run the stratified sampler with the user's parameters:
 
 ```bash
 uv run python scripts/stratified_sampler.py \
-  --population <dataset_or_generated> \
-  --filters '{"sex": "Female", "state": "IL", "age_min": 25, "age_max": 50}' \
-  --dimensions '["age_bracket", "marital_status", "education_tier"]' \
+  --input data/filtered.json \
+  --entity entities/<entity>.md \
   --total 50 \
   --output data/cohort.json
 ```

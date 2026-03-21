@@ -57,10 +57,14 @@ Return JSON:
         {{
             "name": "<realistic full name>",
             "age": <integer>,
+            "sex": "<Male | Female>",
             "city": "<city>",
             "state": "<state abbreviation>",
+            "country": "USA",
             "education_level": "<high_school | bachelors | graduate | etc>",
             "occupation": "<specific job title>",
+            "marital_status": "<never_married | married | divorced | widowed | separated>",
+            "interests": ["<hobby or skill, 3-5 items>"],
             "persona": "<200-400 word detailed persona narrative>",
             "segment": "{segment_label}"
         }}

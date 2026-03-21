@@ -24,11 +24,6 @@ from datasets import load_from_disk
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data" / "nemotron"
 
-MBTI_TYPES = [
-    "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
-    "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP",
-]
-
 # All narrative fields in the dataset, in order of richness
 NARRATIVE_FIELDS = [
     "persona", "cultural_background", "professional_persona",
@@ -150,7 +145,7 @@ def to_profile(row: dict, user_id: int) -> dict:
         "education_level": row.get("education_level", ""),
         "marital_status": row.get("marital_status", ""),
         "occupation": (row.get("occupation") or "").replace("_", " ").title(),
-        "interests": hobbies[:5] + skills[:3],
+        "interests": hobbies + skills,
         "source_uuid": row.get("uuid", ""),
     }
 

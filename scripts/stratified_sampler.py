@@ -5,17 +5,23 @@ Stratification is configurable: pass dimension functions that map a row to a
 bucket label. The sampler ensures minimum 1 per non-empty stratum, then fills
 proportionally with within-stratum diversity on a secondary dimension.
 
+When --entity is provided, occupation bucketing is done via LLM: the full set
+of unique occupation values is sent to the model along with the entity
+description, so the grouping reflects how different professions would evaluate
+that specific entity. The mapping is cached per entity.
+
 Usage:
+    uv run python scripts/stratified_sampler.py \
+      --input data/filtered.json \
+      --entity entities/my_product.md \
+      --total 50 \
+      --output data/cohort.json
+
+    # Without entity (uses raw occupation values, no bucketing)
     uv run python scripts/stratified_sampler.py \
       --input data/filtered.json \
       --total 50 \
       --output data/cohort.json
-
-    # Or with custom dimensions (as Python expressions)
-    uv run python scripts/stratified_sampler.py \
-      --input data/filtered.json \
-      --total 50 \
-      --dim-exprs '["age_bracket(r[\"age\"])", "r[\"marital_status\"]", "education_tier(r[\"education_level\"])"]'
 """
 
 import json
@@ -37,30 +43,40 @@ def age_bracket(age: int) -> str:
     return "50+"
 
 
-def education_tier(edu: str) -> str:
-    if edu in ("graduate",): return "graduate"
-    if edu in ("bachelors",): return "bachelors"
-    if edu in ("associates", "some_college"): return "some_college"
-    return "no_degree"
+def make_occupation_fn(entity_path=None, profiles=None):
+    """
+    Build an occupation bucketing function.
 
+    With --entity: uses LLM to create a target-aware mapping from the full
+    set of unique occupation values. Cached per entity content.
 
-def occupation_bucket(occ: str) -> str:
-    occ = occ.lower()
-    for kw in ("software", "computer", "data", "web", "engineer", "developer"):
-        if kw in occ: return "tech"
-    for kw in ("nurse", "doctor", "physician", "therapist", "health", "medical"):
-        if kw in occ: return "healthcare"
-    for kw in ("teacher", "professor", "instructor", "education"):
-        if kw in occ: return "education"
-    for kw in ("manager", "accountant", "financial", "analyst", "marketing", "sales"):
-        if kw in occ: return "business"
-    for kw in ("artist", "designer", "writer", "musician", "photographer"):
-        if kw in occ: return "creative"
-    for kw in ("cashier", "retail", "food", "customer", "secretary", "laborer"):
-        if kw in occ: return "service"
-    if occ in ("not in workforce", "no occupation", ""):
-        return "not_working"
-    return "other"
+    Without --entity: passes through the raw occupation value.
+    """
+    if entity_path is None:
+        return lambda p: p.get("occupation", "unknown") or "unknown"
+
+    entity_text = Path(entity_path).read_text()
+
+    # Collect unique occupation values from the profiles being sampled
+    unique_occs = set()
+    for p in (profiles or []):
+        occ = p.get("occupation", "")
+        if occ:
+            unique_occs.add(occ)
+
+    if not unique_occs:
+        return lambda p: p.get("occupation", "unknown") or "unknown"
+
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from build_category_map import load_or_build_map
+    mapping = load_or_build_map("occupation", entity_text, list(unique_occs))
+
+    def lookup(p):
+        occ = p.get("occupation", "")
+        return mapping.get(occ, mapping.get(occ.lower(), "other"))
+
+    return lookup
 
 
 # ── Sampler ───────────────────────────────────────────────────────────────
@@ -141,6 +157,8 @@ def stratified_sample(profiles, dim_fns, total=50, diversity_fn=None, seed=42):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="data/filtered.json")
+    parser.add_argument("--entity", default=None,
+                        help="Path to entity document (enables LLM-based occupation bucketing)")
     parser.add_argument("--total", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", default="data/cohort.json")
@@ -150,13 +168,16 @@ def main():
         profiles = json.load(f)
     print(f"Loaded {len(profiles)} profiles from {args.input}")
 
-    # Default dimensions: age, marital status, education
+    # Build occupation function — LLM-based if entity provided, raw passthrough otherwise
+    occupation_fn = make_occupation_fn(args.entity, profiles)
+
+    # Default dimensions: age, marital status, education (raw values)
     dim_fns = [
         lambda p: age_bracket(p.get("age", 30)),
         lambda p: p.get("marital_status", "unknown"),
-        lambda p: education_tier(p.get("education_level", "")),
+        lambda p: p.get("education_level", "") or "unknown",
     ]
-    diversity_fn = lambda p: occupation_bucket(p.get("occupation", ""))
+    diversity_fn = occupation_fn
 
     selected = stratified_sample(profiles, dim_fns, total=args.total,
                                   diversity_fn=diversity_fn, seed=args.seed)
@@ -173,8 +194,8 @@ def main():
     print(f"\nSaved {len(selected)} to {args.output}")
     for dim_name, fn in [("Age", lambda p: age_bracket(p.get("age", 30))),
                           ("Marital", lambda p: p.get("marital_status", "?")),
-                          ("Education", lambda p: education_tier(p.get("education_level", ""))),
-                          ("Occupation", lambda p: occupation_bucket(p.get("occupation", "")))]:
+                          ("Education", lambda p: p.get("education_level", "") or "unknown"),
+                          ("Occupation", occupation_fn)]:
         dist = Counter(fn(p) for p in selected)
         print(f"  {dim_name}: {dict(sorted(dist.items()))}")
     print(f"  Cities: {len(set(p.get('city','') for p in selected))} unique")
