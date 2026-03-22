@@ -310,13 +310,13 @@
     <div id="configBadge" class="config-badge">checking...</div>
   </header>
 
-  <!-- STEP 1: Entity -->
+  <!-- STEP 1: Entity + Evaluate (one click) -->
   <div class="step active" id="step1">
     <div class="step-header">
       <div class="step-num">1</div>
-      <div class="step-title">Describe what you're optimizing</div>
+      <div class="step-title">What are you optimizing?</div>
     </div>
-    <p class="step-desc">Paste your landing page copy, resume, pitch deck text, policy document, or any other entity.</p>
+    <p class="step-desc">Paste whatever you want evaluated — landing page, resume, pitch, dating profile, policy, anything.</p>
 
     <div class="template-chips">
       <span class="template-chip" onclick="loadTemplate('product')">Product</span>
@@ -325,71 +325,33 @@
     </div>
 
     <div class="field">
-      <textarea id="entityText" placeholder="Paste your entity here... (landing page, resume, pitch, policy, etc.)"></textarea>
-    </div>
-    <button onclick="saveEntity()">Continue</button>
-  </div>
-
-  <!-- STEP 2: Cohort -->
-  <div class="step hidden" id="step2">
-    <div class="step-header">
-      <div class="step-num">2</div>
-      <div class="step-title">Build your evaluator panel</div>
-    </div>
-    <p class="step-desc">Define audience segments. The LLM generates realistic personas for each.</p>
-
-    <div class="field">
-      <label>Audience context</label>
-      <input type="text" id="cohortDesc" placeholder="e.g. 'Potential customers for a B2B SaaS analytics tool'">
+      <textarea id="entityText" placeholder="Paste your entity here..."></textarea>
     </div>
 
-    <label>Segments</label>
-    <div id="segmentsList" class="segments-list"></div>
-    <div class="btn-row">
-      <button class="secondary" onclick="addSegment()">+ Add segment</button>
-      <button class="secondary" onclick="suggestSegments()">Re-suggest</button>
-      <button onclick="generateCohort()" id="genCohortBtn">Generate cohort</button>
-    </div>
-
-    <div id="cohortProgress" class="hidden mt-16">
-      <div class="progress-text" id="cohortProgressText">Generating personas...</div>
-      <div class="progress-bar"><div class="progress-fill" id="cohortProgressBar"></div></div>
-    </div>
-
-    <div id="cohortResult" class="hidden mt-16">
-      <div class="stat text-center">
-        <div class="stat-val" id="cohortCount">0</div>
-        <div class="stat-label">evaluators generated</div>
+    <details class="mb-8">
+      <summary style="cursor:pointer;color:var(--text2);font-size:0.85rem">Advanced options</summary>
+      <div style="padding:12px 0">
+        <div class="field">
+          <label>Audience context (optional — auto-detected if blank)</label>
+          <input type="text" id="cohortDesc" placeholder="e.g. 'Women aged 25-35 evaluating a dating profile'">
+        </div>
+        <div class="field">
+          <label>Panel size</label>
+          <input type="number" id="panelSize" value="30" min="5" max="80"
+                 style="width:80px;padding:6px;text-align:center">
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:0.85rem">
+          <input type="checkbox" id="biasCalibration">
+          Bias calibration (reduces framing/authority artifacts)
+        </label>
       </div>
-      <button class="mt-12" onclick="goToStep(3)">Continue to evaluation</button>
-    </div>
-  </div>
+    </details>
 
-  <!-- STEP 3: Evaluate -->
-  <div class="step hidden" id="step3">
-    <div class="step-header">
-      <div class="step-num">3</div>
-      <div class="step-title">Run evaluation</div>
-    </div>
-    <p class="step-desc">Each evaluator scores your entity 1-10 with reasoning.</p>
+    <button onclick="runFullPipeline()" id="goBtn">Evaluate</button>
 
-    <div class="btn-row">
-      <button onclick="runEval()" id="evalBtn">Evaluate</button>
-      <label style="display:flex;align-items:center;gap:6px;margin:0">
-        <input type="checkbox" id="biasCalibration">
-        <span style="font-size:0.8rem;color:var(--text2)">Bias calibration</span>
-      </label>
-      <div style="flex:1"></div>
-      <label style="display:flex;align-items:center;gap:6px;margin:0">
-        <span style="font-size:0.8rem;color:var(--text2)">Parallel:</span>
-        <input type="number" id="evalParallel" value="5" min="1" max="20"
-               style="width:60px;padding:6px;text-align:center">
-      </label>
-    </div>
-
-    <div id="evalProgress" class="hidden mt-16">
-      <div class="progress-text" id="evalProgressText">Evaluating...</div>
-      <div class="progress-bar"><div class="progress-fill" id="evalProgressBar"></div></div>
+    <div id="pipelineProgress" class="hidden mt-16">
+      <div class="progress-text" id="pipelineProgressText">Starting...</div>
+      <div class="progress-bar"><div class="progress-fill" id="pipelineProgressBar"></div></div>
       <div class="eval-log" id="evalLog"></div>
     </div>
 
@@ -405,16 +367,16 @@
         <div class="results-details" id="evalAnalysis"></div>
       </details>
       <div class="btn-row mt-16">
-        <button onclick="goToStep(4)">Continue to gradient</button>
-        <button class="secondary" onclick="goToStep(5)">Run bias audit</button>
+        <button onclick="goToStep(2)">Find what to change</button>
+        <button class="secondary" onclick="goToStep(3)">Run bias audit</button>
       </div>
     </div>
   </div>
 
-  <!-- STEP 4: Counterfactual -->
-  <div class="step hidden" id="step4">
+  <!-- STEP 2: Counterfactual -->
+  <div class="step hidden" id="step2">
     <div class="step-header">
-      <div class="step-num">4</div>
+      <div class="step-num">2</div>
       <div class="step-title">Find the highest-impact changes</div>
     </div>
     <p class="step-desc">List hypothetical changes. Undecided evaluators (scores 4-7) re-evaluate each one.</p>
@@ -455,10 +417,10 @@
     </div>
   </div>
 
-  <!-- STEP 5: Bias Audit -->
-  <div class="step hidden" id="step5">
+  <!-- STEP 3: Bias Audit -->
+  <div class="step hidden" id="step3">
     <div class="step-header">
-      <div class="step-num">5</div>
+      <div class="step-num">3</div>
       <div class="step-title">Bias Audit</div>
     </div>
     <p class="step-desc">
@@ -509,8 +471,8 @@
         <div class="results-details" id="auditReport"></div>
       </details>
       <div class="btn-row mt-16">
-        <button class="secondary" onclick="goToStep(3)">Re-evaluate with bias calibration</button>
-        <button class="secondary" onclick="goToStep(4)">Continue to gradient</button>
+        <button class="secondary" onclick="rerunWithCalibration()">Re-evaluate with bias calibration</button>
+        <button class="secondary" onclick="goToStep(2)">Continue to gradient</button>
       </div>
     </div>
   </div>
@@ -594,7 +556,6 @@ async function init() {
     badge.className = 'config-badge warn';
   }
 
-  // Changes will be populated with defaults
   addChange('', '');
   addChange('', '');
 }
@@ -608,7 +569,7 @@ function loadTemplate(name) {
 // ── Step navigation ──
 
 function goToStep(n) {
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= 3; i++) {
     const el = document.getElementById(`step${i}`);
     if (!el) continue;
     if (i < n) {
@@ -622,200 +583,156 @@ function goToStep(n) {
       el.classList.remove('active', 'done');
     }
   }
-  // When going to bias audit, keep steps 4/5 both visible context
-  if (n === 5) {
-    const step3 = document.getElementById('step3');
-    step3.classList.remove('hidden');
-    step3.classList.add('done');
-  }
 }
 
-// ── Step 1: Entity ──
+// ── Logging helper ──
 
-async function saveEntity() {
+function logStep(msg, cls = '') {
+  const log = document.getElementById('evalLog');
+  log.innerHTML += `<div class="${cls}">${msg}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── Step 1: Full pipeline (one click) ──
+
+async function runFullPipeline() {
   const text = document.getElementById('entityText').value.trim();
   if (!text) return alert('Please enter your entity text.');
 
-  const resp = await fetch('/api/session', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({entity_text: text}),
-  });
-  const data = await resp.json();
-  sessionId = data.session_id;
+  const btn = document.getElementById('goBtn');
+  btn.disabled = true;
 
-  // Pre-fill cohort description from first line
-  const firstLine = text.split('\n').find(l => l.trim().length > 2) || '';
-  const desc = document.getElementById('cohortDesc');
-  if (!desc.value) desc.value = `People evaluating: ${firstLine.replace(/^#+\s*/, '').trim()}`;
+  const progress = document.getElementById('pipelineProgress');
+  progress.classList.remove('hidden');
+  document.getElementById('evalResults').classList.add('hidden');
+  document.getElementById('evalLog').innerHTML = '';
+  document.getElementById('pipelineProgressBar').style.width = '5%';
 
-  goToStep(2);
-
-  // Auto-suggest segments via LLM
-  await suggestSegments();
-}
-
-async function suggestSegments() {
-  const entityText = document.getElementById('entityText').value.trim();
+  const biasCal = document.getElementById('biasCalibration').checked;
+  const panelSize = parseInt(document.getElementById('panelSize').value) || 30;
   const audienceCtx = document.getElementById('cohortDesc').value.trim();
-  if (!entityText) return;
-
-  // Clear existing segments and show loading
-  const list = document.getElementById('segmentsList');
-  list.innerHTML = '<div style="color:var(--text2);font-size:0.85rem;padding:8px">Suggesting segments...</div>';
 
   try {
-    const resp = await fetch('/api/suggest-segments', {
+    // Phase 1: Create session
+    document.getElementById('pipelineProgressText').textContent = 'Creating session...';
+    logStep('Creating session...');
+    const sessResp = await fetch('/api/session', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({entity_text: entityText, audience_context: audienceCtx}),
+      body: JSON.stringify({entity_text: text}),
     });
-    const data = await resp.json();
-    list.innerHTML = '';
-    (data.segments || []).forEach(seg => {
-      addSegment(seg.label, seg.count || 8);
+    const sessData = await sessResp.json();
+    sessionId = sessData.session_id;
+    logStep(`Session: ${sessionId}`, 'pos');
+
+    // Phase 2: Suggest segments
+    document.getElementById('pipelineProgressText').textContent = 'Analyzing entity and choosing evaluator segments...';
+    document.getElementById('pipelineProgressBar').style.width = '10%';
+    logStep('Analyzing entity to find the right evaluator segments...');
+
+    const segResp = await fetch('/api/suggest-segments', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        entity_text: text,
+        audience_context: audienceCtx || `People who would evaluate: ${text.substring(0, 200)}`,
+      }),
     });
-  } catch (e) {
-    // Fallback to empty segments on error
-    list.innerHTML = '';
-    addSegment('', 8);
-    addSegment('', 8);
-  }
-}
+    const segData = await segResp.json();
+    const segments = segData.segments || [];
 
-// ── Step 2: Cohort ──
+    // Scale segment counts to match requested panel size
+    const totalSuggested = segments.reduce((a, s) => a + (s.count || 8), 0);
+    const scale = panelSize / (totalSuggested || 1);
+    segments.forEach(s => { s.count = Math.max(2, Math.round((s.count || 8) * scale)); });
 
-function addSegment(label = '', count = 8) {
-  const list = document.getElementById('segmentsList');
-  const row = document.createElement('div');
-  row.className = 'seg-row';
-  row.innerHTML = `
-    <input type="text" placeholder="Segment description" value="${label}">
-    <input type="number" value="${count}" min="1" max="20">
-    <button onclick="this.parentElement.remove()" title="Remove">&times;</button>
-  `;
-  list.appendChild(row);
-}
+    segments.forEach(s => logStep(`  Segment: ${s.label} (${s.count} personas)`));
+    logStep(`${segments.length} segments identified`, 'pos');
+    document.getElementById('pipelineProgressBar').style.width = '20%';
 
-async function generateCohort() {
-  const desc = document.getElementById('cohortDesc').value.trim();
-  if (!desc) return alert('Please add audience context.');
+    // Phase 3: Generate cohort
+    document.getElementById('pipelineProgressText').textContent = 'Generating evaluator personas...';
+    logStep('Generating realistic personas for each segment...');
 
-  const rows = document.querySelectorAll('#segmentsList .seg-row');
-  const segments = [];
-  rows.forEach(row => {
-    const inputs = row.querySelectorAll('input');
-    const label = inputs[0].value.trim();
-    const count = parseInt(inputs[1].value) || 5;
-    if (label) segments.push({label, count});
-  });
-
-  if (segments.length === 0) return alert('Add at least one segment.');
-
-  const btn = document.getElementById('genCohortBtn');
-  btn.disabled = true;
-  const progress = document.getElementById('cohortProgress');
-  progress.classList.remove('hidden');
-  document.getElementById('cohortProgressBar').style.width = '30%';
-  document.getElementById('cohortProgressText').textContent = 'Generating personas (this may take 30-60s)...';
-
-  try {
-    const resp = await fetch('/api/cohort/generate', {
+    const desc = audienceCtx || `People evaluating: ${text.substring(0, 200)}`;
+    const cohortResp = await fetch('/api/cohort/generate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({description: desc, segments, parallel: 3}),
     });
-    const data = await resp.json();
-    sessionId = data.session_id;
+    const cohortData = await cohortResp.json();
 
-    // Update entity text in session
-    const entityText = document.getElementById('entityText').value.trim();
-    if (entityText) {
-      await fetch('/api/session', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({entity_text: entityText}),
-      }).then(r => r.json()).then(d => { sessionId = d.session_id; });
-      // Upload cohort to new session
-      await fetch(`/api/cohort/upload/${sessionId}`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data.cohort),
+    // Upload cohort to our session
+    await fetch(`/api/cohort/upload/${sessionId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cohortData.cohort),
+    });
+
+    logStep(`${cohortData.cohort_size} evaluators generated`, 'pos');
+    document.getElementById('pipelineProgressBar').style.width = '35%';
+
+    // Phase 4: Evaluate via SSE
+    document.getElementById('pipelineProgressText').textContent = 'Evaluating...';
+    logStep('Starting evaluation — each evaluator scores your entity...');
+
+    await new Promise((resolve, reject) => {
+      const params = new URLSearchParams({parallel: 5, bias_calibration: biasCal});
+      const es = new EventSource(`/api/evaluate/stream/${sessionId}?${params}`);
+
+      es.addEventListener('start', (e) => {
+        const d = JSON.parse(e.data);
+        const calLabel = d.bias_calibration ? ' (bias-calibrated)' : '';
+        document.getElementById('pipelineProgressText').textContent =
+          `Evaluating ${d.total} personas${calLabel}...`;
       });
-    }
 
-    document.getElementById('cohortProgressBar').style.width = '100%';
-    document.getElementById('cohortCount').textContent = data.cohort_size;
-    document.getElementById('cohortResult').classList.remove('hidden');
-    document.getElementById('cohortProgressText').textContent = 'Done!';
+      es.addEventListener('progress', (e) => {
+        const d = JSON.parse(e.data);
+        const base = 35;
+        const pct = base + Math.round(d.done / d.total * (100 - base));
+        document.getElementById('pipelineProgressBar').style.width = pct + '%';
+        document.getElementById('pipelineProgressText').textContent =
+          `${d.done}/${d.total} evaluated`;
+
+        const cls = d.error ? 'err' : d.action === 'positive' ? 'pos' : d.action === 'negative' ? 'neg' : 'neu';
+        const icon = d.error ? 'ERR' : d.action === 'positive' ? '+' : d.action === 'negative' ? '-' : '~';
+        const score = d.score != null ? `${d.score}/10` : '';
+        logStep(`[${d.done}/${d.total}] ${d.name}: ${icon} ${score}`, cls);
+      });
+
+      es.addEventListener('complete', (e) => {
+        es.close();
+        const d = JSON.parse(e.data);
+        evalResultsData = d.results;
+
+        document.getElementById('pipelineProgressBar').style.width = '100%';
+        document.getElementById('pipelineProgressText').textContent = `Done in ${d.elapsed}s`;
+
+        document.getElementById('avgScore').innerHTML = `${d.avg_score}<span>/10</span>`;
+        document.getElementById('posCount').textContent = d.positive;
+        document.getElementById('neuCount').textContent = d.neutral;
+        document.getElementById('negCount').textContent = d.negative;
+        document.getElementById('evalAnalysis').textContent = d.analysis;
+        document.getElementById('evalResults').classList.remove('hidden');
+        resolve();
+      });
+
+      es.onerror = () => { es.close(); reject(new Error('Connection lost')); };
+    });
+
   } catch (e) {
-    alert('Error generating cohort: ' + e.message);
-    document.getElementById('cohortProgressText').textContent = 'Failed';
+    document.getElementById('pipelineProgressText').textContent = `Error: ${e.message}`;
+    logStep(`Error: ${e.message}`, 'err');
   } finally {
     btn.disabled = false;
   }
 }
 
-// ── Step 3: Evaluate ──
-
-function runEval() {
-  if (!sessionId) return alert('No session.');
-  const parallel = parseInt(document.getElementById('evalParallel').value) || 5;
-  const biasCal = document.getElementById('biasCalibration').checked;
-  const btn = document.getElementById('evalBtn');
-  btn.disabled = true;
-
-  document.getElementById('evalProgress').classList.remove('hidden');
-  document.getElementById('evalResults').classList.add('hidden');
-  document.getElementById('evalLog').innerHTML = '';
-
-  const params = new URLSearchParams({parallel, bias_calibration: biasCal});
-  const es = new EventSource(`/api/evaluate/stream/${sessionId}?${params}`);
-
-  es.addEventListener('start', (e) => {
-    const d = JSON.parse(e.data);
-    document.getElementById('evalProgressText').textContent =
-      `Evaluating ${d.total} evaluators (${d.model})...`;
-  });
-
-  es.addEventListener('progress', (e) => {
-    const d = JSON.parse(e.data);
-    const pct = Math.round(d.done / d.total * 100);
-    document.getElementById('evalProgressBar').style.width = pct + '%';
-    document.getElementById('evalProgressText').textContent =
-      `${d.done}/${d.total} evaluated`;
-
-    const log = document.getElementById('evalLog');
-    const cls = d.error ? 'err' : d.action === 'positive' ? 'pos' : d.action === 'negative' ? 'neg' : 'neu';
-    const icon = d.error ? 'ERR' : d.action === 'positive' ? '+' : d.action === 'negative' ? '-' : '~';
-    const score = d.score != null ? `${d.score}/10` : '';
-    log.innerHTML += `<div class="${cls}">[${d.done}/${d.total}] ${d.name}: ${icon} ${score}</div>`;
-    log.scrollTop = log.scrollHeight;
-  });
-
-  es.addEventListener('complete', (e) => {
-    es.close();
-    const d = JSON.parse(e.data);
-    evalResultsData = d.results;
-
-    document.getElementById('evalProgressBar').style.width = '100%';
-    document.getElementById('evalProgressText').textContent =
-      `Done in ${d.elapsed}s`;
-
-    document.getElementById('avgScore').innerHTML = `${d.avg_score}<span>/10</span>`;
-    document.getElementById('posCount').textContent = d.positive;
-    document.getElementById('neuCount').textContent = d.neutral;
-    document.getElementById('negCount').textContent = d.negative;
-    document.getElementById('evalAnalysis').textContent = d.analysis;
-    document.getElementById('evalResults').classList.remove('hidden');
-    btn.disabled = false;
-  });
-
-  es.onerror = () => {
-    es.close();
-    document.getElementById('evalProgressText').textContent = 'Connection lost';
-    btn.disabled = false;
-  };
+function rerunWithCalibration() {
+  document.getElementById('biasCalibration').checked = true;
+  goToStep(1);
+  runFullPipeline();
 }
 
 // ── Step 4: Counterfactual ──
