@@ -185,10 +185,62 @@ v3  + SOC2       7.0 avg  28% positive    concerns: (none)
 
 ---
 
+## Bias Auditing & Calibration
+
+LLM evaluators don't exhibit cognitive biases at human-realistic levels — they may be too rational (under-biased) or show biases in the wrong patterns (mis-biased). Since real expert panels *are* biased, matching their behavior means matching their bias profile, not eliminating bias.
+
+SGO includes a bias audit inspired by [CoBRA](https://arxiv.org/abs/2509.13588) (Liu et al., CHI'26 Best Paper), which uses validated social science experiments to measure and control cognitive biases in LLM agents.
+
+### Measuring bias
+
+`bias_audit.py` runs three probes through the same LLM + persona pipeline SGO uses for evaluation:
+
+| Probe | What it tests | Human baseline |
+|-------|--------------|----------------|
+| **Framing** | Same entity, gain-framed vs. loss-framed — do evaluators shift scores based on rhetoric vs. substance? | ~30% shift (Tversky & Kahneman, 1981) |
+| **Authority** | Entity with/without credibility signals (SOC2, press, logos) — how much do credentials move the needle? | ~20% sensitivity in evaluation contexts |
+| **Order** | Same entity, sections reordered — does information order anchor scores? | Should be ~0% |
+
+```bash
+uv run python scripts/bias_audit.py \
+  --entity entities/my_product.md \
+  --cohort data/cohort.json \
+  --probes framing authority order \
+  --sample 10
+```
+
+Output: `results/bias_audit/report.md` — per-probe shift %, gap vs. human baselines, and whether the panel is over-biased, under-biased, or well-calibrated.
+
+### Calibrating evaluation
+
+If the audit reveals bias gaps, add `--bias-calibration` to your evaluation run:
+
+```bash
+uv run python scripts/evaluate.py \
+  --entity entities/my_product.md \
+  --cohort data/cohort.json \
+  --tag calibrated \
+  --bias-calibration
+```
+
+This appends bias-aware instructions to the evaluation prompt — reducing framing, authority, and order artifacts while preserving realistic human-level biases. The goal is not to eliminate bias but to match the type and magnitude of biases that real expert panels exhibit.
+
+### The expert panel gap
+
+The gap between SGO and real expert panels has three components:
+
+| Gap | What it means | How SGO addresses it |
+|-----|--------------|---------------------|
+| **Knowledge** | Does the LLM know what an expert knows? | Persona enrichment, narrative context |
+| **Preference** | Does it weight factors correctly? | Stratification, prompt design |
+| **Bias** | Does it exhibit human-realistic cognitive biases? | Bias audit + calibration (CoBRA-inspired) |
+
+---
+
 ## Limitations
 
 - **Directional, not definitive** — this is synthetic research. Treat results as strong hypotheses, not proof. Validate important decisions with real users.
-- **LLM biases** — evaluators inherit the model's cultural blind spots. Results skew toward what the LLM thinks people think.
+- **LLM biases** — evaluators inherit the model's cultural blind spots. Results skew toward what the LLM thinks people think. Use `bias_audit.py` to measure and `--bias-calibration` to mitigate.
 - **Independent evaluators** — each persona scores in isolation. Real-world opinions are social — people influence each other. SGO doesn't capture herd effects.
 - **Not all changes add up** — two changes that each score +1.5 might not give +3.0 together. Test combinations explicitly.
 
@@ -246,8 +298,9 @@ Only probe changes you'd actually make:
 │   ├── persona_loader.py   # Load + filter
 │   ├── stratified_sampler.py
 │   ├── generate_cohort.py  # LLM-generate personas (fallback)
-│   ├── evaluate.py         # Scorer
+│   ├── evaluate.py         # Scorer (supports --bias-calibration)
 │   ├── counterfactual.py   # Semantic gradient probe
+│   ├── bias_audit.py       # CoBRA-inspired cognitive bias measurement
 │   └── compare.py          # Cross-run diff
 ├── templates/              # Entity + changes templates
 ├── entities/               # Your documents (gitignored)
