@@ -131,6 +131,7 @@ class EntityInput(BaseModel):
 
 class CohortConfig(BaseModel):
     description: str
+    audience_context: str = ""
     segments: list[dict]  # [{"label": "...", "count": N}, ...]
     parallel: int = 3
 
@@ -318,6 +319,50 @@ Be concrete and relevant — no generic segments."""
         raise HTTPException(500, f"Failed to suggest segments: {e}")
 
 
+def extract_filters(client, model, audience_context, entity_text=""):
+    """Use LLM to extract structured Nemotron filters from audience context."""
+    if not audience_context.strip():
+        return {}
+
+    prompt = f"""Extract structured demographic filters from this audience description.
+Only include filters that are explicitly stated or clearly implied.
+
+Audience: {audience_context}
+Entity context: {entity_text[:500]}
+
+Return JSON with ONLY the fields that apply (omit fields that aren't specified):
+{{
+    "sex": "Male" or "Female",
+    "age_min": <number>,
+    "age_max": <number>,
+    "state": "<2-letter state code, e.g. IL for Illinois>",
+    "city": "<city name substring>",
+    "education_level": ["bachelors", "graduate", ...],
+    "occupation": "<occupation substring>"
+}}
+
+If the audience is "women in Chicago aged 25-35", return:
+{{"sex": "Female", "city": "Chicago", "state": "IL", "age_min": 25, "age_max": 35}}
+
+If nothing specific is stated, return {{}}."""
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=256,
+            temperature=0.2,
+        )
+        content = resp.choices[0].message.content
+        content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+        filters = json.loads(content)
+        # Clean empty values
+        return {k: v for k, v in filters.items() if v is not None and v != "" and v != []}
+    except Exception:
+        return {}
+
+
 @app.post("/api/cohort/generate")
 async def generate_cohort_endpoint(config: CohortConfig):
     """Generate a cohort — from Nemotron if available, else LLM-generated."""
@@ -330,7 +375,14 @@ async def generate_cohort_endpoint(config: CohortConfig):
         import random
         pl = _lazy_persona_loader()
         ss = _lazy_stratified_sampler()
-        filtered = pl.filter_personas(ds, {}, limit=max(total * 20, 2000))
+
+        # Extract structured filters from audience context
+        client = get_client()
+        model = get_model()
+        filters = extract_filters(client, model, config.audience_context, config.description)
+        print(f"Nemotron filters from audience context: {filters}")
+
+        filtered = pl.filter_personas(ds, filters, limit=max(total * 20, 2000))
         profiles = [pl.to_profile(row, i) for i, row in enumerate(filtered)]
 
         # Use only age + education to keep strata count < total
@@ -379,6 +431,7 @@ async def generate_cohort_endpoint(config: CohortConfig):
     return {
         "session_id": sid, "cohort_size": len(all_personas),
         "cohort": all_personas, "source": source,
+        "filters": filters if ds is not None else None,
     }
 
 

@@ -719,7 +719,7 @@ async function runFullPipeline() {
     const cohortResp = await fetch('/api/cohort/generate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({description: desc, segments, parallel: 3}),
+      body: JSON.stringify({description: desc, audience_context: audienceCtx, segments, parallel: 3}),
     });
     const cohortData = await cohortResp.json();
 
@@ -731,6 +731,16 @@ async function runFullPipeline() {
     });
 
     const src = cohortData.source === 'nemotron' ? 'census-grounded (Nemotron)' : 'LLM-generated';
+    if (cohortData.filters && Object.keys(cohortData.filters).length > 0) {
+      const f = cohortData.filters;
+      const parts = [];
+      if (f.sex) parts.push(f.sex);
+      if (f.age_min || f.age_max) parts.push(`age ${f.age_min||'?'}-${f.age_max||'?'}`);
+      if (f.city) parts.push(f.city);
+      if (f.state) parts.push(f.state);
+      if (f.occupation) parts.push(f.occupation);
+      logStep(`Filtered: ${parts.join(', ')}`, 'pos');
+    }
     logStep(`${cohortData.cohort_size} evaluators ready — ${src}`, 'pos');
     if (panelSize < 40) {
       logStep(`Tip: a panel of 40-60 gives more reliable results across segments`, 'neu');
