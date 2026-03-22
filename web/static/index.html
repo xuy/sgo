@@ -347,6 +347,7 @@
     <div id="segmentsList" class="segments-list"></div>
     <div class="btn-row">
       <button class="secondary" onclick="addSegment()">+ Add segment</button>
+      <button class="secondary" onclick="suggestSegments()">Re-suggest</button>
       <button onclick="generateCohort()" id="genCohortBtn">Generate cohort</button>
     </div>
 
@@ -593,16 +594,9 @@ async function init() {
     badge.className = 'config-badge warn';
   }
 
-  // Default segments
-  addSegment('Early adopter, tech-savvy', 8);
-  addSegment('Mainstream user, non-technical', 8);
-  addSegment('Budget-conscious comparison shopper', 8);
-  addSegment('Enterprise decision-maker', 8);
-
-  // Default changes
-  addChange('Add free tier', 'Introduce a generous free plan that lets users try core features with no credit card required.');
-  addChange('Add social proof', 'Display customer logos, case studies, and specific metrics (e.g., "Used by 5,000 teams") prominently on the page.');
-  addChange('Lower price by 40%', 'Reduce all paid plan prices by 40% across the board.');
+  // Changes will be populated with defaults
+  addChange('', '');
+  addChange('', '');
 }
 
 // ── Templates ──
@@ -656,6 +650,37 @@ async function saveEntity() {
   if (!desc.value) desc.value = `People evaluating: ${firstLine.replace(/^#+\s*/, '').trim()}`;
 
   goToStep(2);
+
+  // Auto-suggest segments via LLM
+  await suggestSegments();
+}
+
+async function suggestSegments() {
+  const entityText = document.getElementById('entityText').value.trim();
+  const audienceCtx = document.getElementById('cohortDesc').value.trim();
+  if (!entityText) return;
+
+  // Clear existing segments and show loading
+  const list = document.getElementById('segmentsList');
+  list.innerHTML = '<div style="color:var(--text2);font-size:0.85rem;padding:8px">Suggesting segments...</div>';
+
+  try {
+    const resp = await fetch('/api/suggest-segments', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entity_text: entityText, audience_context: audienceCtx}),
+    });
+    const data = await resp.json();
+    list.innerHTML = '';
+    (data.segments || []).forEach(seg => {
+      addSegment(seg.label, seg.count || 8);
+    });
+  } catch (e) {
+    // Fallback to empty segments on error
+    list.innerHTML = '';
+    addSegment('', 8);
+    addSegment('', 8);
+  }
 }
 
 // ── Step 2: Cohort ──

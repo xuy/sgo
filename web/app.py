@@ -88,6 +88,11 @@ class CounterfactualConfig(BaseModel):
     parallel: int = 5
 
 
+class SuggestSegmentsInput(BaseModel):
+    entity_text: str
+    audience_context: str
+
+
 # ── Routes ────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -132,6 +137,47 @@ async def get_session(sid: str):
         "has_eval": s["eval_results"] is not None,
         "has_gradient": s["gradient"] is not None,
     }
+
+
+@app.post("/api/suggest-segments")
+async def suggest_segments(input: SuggestSegmentsInput):
+    """Use LLM to suggest audience segments based on entity and context."""
+    client = get_client()
+    model = get_model()
+
+    prompt = f"""Given this entity and audience context, suggest 4-5 evaluator segments.
+Each segment should represent a distinct perspective that would evaluate this entity differently.
+
+Entity:
+{input.entity_text[:2000]}
+
+Audience context: {input.audience_context}
+
+Return JSON:
+{{
+    "segments": [
+        {{"label": "<concise segment description, 5-10 words>", "count": <6-10>}}
+    ]
+}}
+
+Make segments specific to THIS domain. For a product, use buyer personas. For a dating profile,
+use different types of potential partners. For a resume, use different hiring managers. Etc.
+Be concrete and relevant — no generic segments."""
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=1024,
+            temperature=0.7,
+        )
+        content = resp.choices[0].message.content
+        content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+        data = json.loads(content)
+        return data
+    except Exception as e:
+        raise HTTPException(500, f"Failed to suggest segments: {e}")
 
 
 @app.post("/api/cohort/generate")
