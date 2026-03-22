@@ -306,7 +306,7 @@
 <div class="container">
   <header>
     <h1>Semantic Gradient Optimization</h1>
-    <p>Evaluate anything against a synthetic panel. Find what to change first.</p>
+    <p>Build a panel. See what they think. Test what to change next.</p>
     <div id="configBadge" class="config-badge">checking...</div>
     <div id="nemotronBadge" class="config-badge" style="margin-left:8px">checking...</div>
   </header>
@@ -315,15 +315,15 @@
   <div class="step hidden" id="nemotronSetup" style="border-color:var(--yellow)">
     <div class="step-header">
       <div class="step-num" style="border-color:var(--yellow);color:var(--yellow)">!</div>
-      <div class="step-title">Persona dataset not found</div>
+      <div class="step-title">Panel data not found</div>
     </div>
-    <p class="step-desc">SGO uses 1M census-grounded personas for realistic evaluations. Provide a path to the dataset or download it (~2GB).</p>
+    <p class="step-desc">SGO needs its persona dataset to build realistic panels. Choose where to load it from, or download it now (~2 GB).</p>
     <div class="field">
-      <label>Dataset path</label>
-      <input type="text" id="nemotronPath" placeholder="">
+      <label>Folder for panel data</label>
+      <input type="text" id="nemotronPath" placeholder="e.g. data/nemotron">
     </div>
     <div class="btn-row">
-      <button onclick="setupNemotron()">Load or download</button>
+      <button onclick="setupNemotron()">Use this folder</button>
     </div>
     <div id="nemotronStatus" class="hidden mt-16">
       <div class="progress-text" id="nemotronStatusText"></div>
@@ -334,9 +334,9 @@
   <div class="step active" id="step1">
     <div class="step-header">
       <div class="step-num">1</div>
-      <div class="step-title">What are you optimizing?</div>
+      <div class="step-title">Build your panel review</div>
     </div>
-    <p class="step-desc">Paste whatever you want evaluated — landing page, resume, pitch, policy, profile, anything.</p>
+    <p class="step-desc">Paste what you want reviewed, set your goal and audience, and let the panel react.</p>
 
     <div class="template-chips">
       <span class="template-chip" onclick="loadTemplate('product')">Product</span>
@@ -345,42 +345,42 @@
     </div>
 
     <div class="field">
-      <label>Entity — what are you putting out there?</label>
-      <textarea id="entityText" placeholder="Paste your landing page, resume, pitch, profile, policy..."></textarea>
+      <label>What should the panel review?</label>
+      <textarea id="entityText" placeholder="Paste the text someone would actually see: landing page, resume, pitch, profile, policy..."></textarea>
     </div>
 
     <div class="field">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <label>Goal — what outcome do you want?</label>
-        <button class="secondary" style="padding:4px 12px;font-size:0.75rem" onclick="inferSpec()">Suggest</button>
+        <label>What outcome are you optimizing for?</label>
+        <button class="secondary" style="padding:4px 12px;font-size:0.75rem" onclick="inferSpec()">Auto-fill</button>
       </div>
       <input type="text" id="goalText" placeholder="e.g. 'Increase conversion rate' or 'Get more interview callbacks'">
     </div>
 
     <div class="field">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <label>Audience — who are you trying to reach?</label>
-        <button class="secondary" style="padding:4px 12px;font-size:0.75rem" onclick="inferSpec()">Suggest</button>
+        <label>Who should be on the panel?</label>
+        <button class="secondary" style="padding:4px 12px;font-size:0.75rem" onclick="inferSpec()">Auto-fill</button>
       </div>
       <input type="text" id="cohortDesc" placeholder="e.g. 'Engineering managers at mid-stage startups' or 'US consumers aged 25-45'">
     </div>
 
     <details class="mb-8">
-      <summary style="cursor:pointer;color:var(--text2);font-size:0.85rem">Advanced options</summary>
+      <summary style="cursor:pointer;color:var(--text2);font-size:0.85rem">Panel settings</summary>
       <div style="padding:12px 0">
         <div class="field">
-          <label>Panel size</label>
+          <label>Panel size (more people = steadier results)</label>
           <input type="number" id="panelSize" value="30" min="5" max="80"
                  style="width:80px;padding:6px;text-align:center">
         </div>
         <label style="display:inline-flex;align-items:center;gap:8px;margin:0;font-size:0.85rem;cursor:pointer">
           <input type="checkbox" id="biasCalibration" checked style="width:auto;margin:0">
-          More realistic evaluations
+          Reduce framing and authority effects
         </label>
       </div>
     </details>
 
-    <button onclick="runFullPipeline()" id="goBtn">Evaluate</button>
+    <button onclick="runFullPipeline()" id="goBtn">Build panel and review</button>
 
     <div id="pipelineProgress" class="hidden mt-16">
       <div class="progress-text" id="pipelineProgressText">Starting...</div>
@@ -391,17 +391,17 @@
     <div id="evalResults" class="hidden mt-16">
       <div class="score-big" id="avgScore">0<span>/10</span></div>
       <div class="stats-row">
-        <div class="stat pos"><div class="stat-val" id="posCount">0</div><div class="stat-label">positive</div></div>
-        <div class="stat neu"><div class="stat-val" id="neuCount">0</div><div class="stat-label">neutral</div></div>
-        <div class="stat neg"><div class="stat-val" id="negCount">0</div><div class="stat-label">negative</div></div>
+        <div class="stat pos"><div class="stat-val" id="posCount">0</div><div class="stat-label">would say yes</div></div>
+        <div class="stat neu"><div class="stat-val" id="neuCount">0</div><div class="stat-label">unsure</div></div>
+        <div class="stat neg"><div class="stat-val" id="negCount">0</div><div class="stat-label">would say no</div></div>
       </div>
       <details>
         <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full analysis</summary>
         <div class="results-details" id="evalAnalysis"></div>
       </details>
       <div class="btn-row mt-16">
-        <button onclick="runDirections()">Directions for your goal</button>
-        <button class="secondary" onclick="goToStep(3)">Run bias audit</button>
+        <button onclick="runDirections()">Test what to change next</button>
+        <button class="secondary" onclick="goToStep(3)">Check panel realism</button>
       </div>
     </div>
   </div>
@@ -410,9 +410,9 @@
   <div class="step hidden" id="step2">
     <div class="step-header">
       <div class="step-num">2</div>
-      <div class="step-title">Directions for your goal</div>
+      <div class="step-title">Test what to change next</div>
     </div>
-    <p class="step-desc">Testing changes against the persuadable middle — the people who are <em>almost</em> convinced.</p>
+    <p class="step-desc">Testing changes with people who are <em>on the fence</em> — the ones who could go either way.</p>
 
     <div id="cfProgress" class="mt-16">
       <div class="progress-text" id="cfProgressText">Analyzing concerns...</div>
@@ -437,30 +437,30 @@
   <div class="step hidden" id="step3">
     <div class="step-header">
       <div class="step-num">3</div>
-      <div class="step-title">Bias Audit</div>
+      <div class="step-title">Check panel realism</div>
     </div>
     <p class="step-desc">
-      Measure cognitive biases in your evaluator panel using validated social science experiments
-      (<a href="https://arxiv.org/abs/2509.13588" target="_blank" style="color:var(--accent2)">CoBRA, CHI'26</a>).
+      See whether your panel reacts more like real people or more like an LLM.
+      Based on <a href="https://arxiv.org/abs/2509.13588" target="_blank" style="color:var(--accent2)">CoBRA (CHI'26)</a>.
     </p>
 
     <div class="field">
-      <label>Probes to run</label>
+      <label>Checks to run</label>
       <div style="display:flex;gap:16px;margin-bottom:12px">
         <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:0.85rem">
-          <input type="checkbox" id="probeFraming" checked> Framing effect
+          <input type="checkbox" id="probeFraming" checked> Does wording change the score?
         </label>
         <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:0.85rem">
-          <input type="checkbox" id="probeAuthority" checked> Authority bias
+          <input type="checkbox" id="probeAuthority" checked> Do trust signals change the score?
         </label>
         <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:0.85rem">
-          <input type="checkbox" id="probeOrder" checked> Order effect
+          <input type="checkbox" id="probeOrder" checked> Does section order change the score?
         </label>
       </div>
     </div>
 
     <div class="btn-row">
-      <button onclick="runBiasAudit()" id="auditBtn">Run audit</button>
+      <button onclick="runBiasAudit()" id="auditBtn">Run checks</button>
       <div style="flex:1"></div>
       <label style="display:flex;align-items:center;gap:6px;margin:0">
         <span style="font-size:0.8rem;color:var(--text2)">Sample size:</span>
@@ -475,10 +475,10 @@
     </div>
 
     <div id="auditResults" class="hidden mt-16">
-      <h3 style="margin-bottom:12px">Bias Audit Results</h3>
+      <h3 style="margin-bottom:12px">Panel Realism Check</h3>
       <table class="gradient-table" id="auditTable">
         <thead>
-          <tr><th>Probe</th><th>Shifted %</th><th>Avg |Delta|</th><th>Human Baseline</th><th>Assessment</th></tr>
+          <tr><th>Check</th><th>Shifted %</th><th>Avg score change</th><th>Human baseline</th><th>Assessment</th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -487,8 +487,8 @@
         <div class="results-details" id="auditReport"></div>
       </details>
       <div class="btn-row mt-16">
-        <button class="secondary" onclick="rerunWithCalibration()">Re-evaluate with bias calibration</button>
-        <button class="secondary" onclick="goToStep(2)">Continue to gradient</button>
+        <button class="secondary" onclick="rerunWithCalibration()">Run again with realism tuning</button>
+        <button class="secondary" onclick="goToStep(2)">Test what to change next</button>
       </div>
     </div>
   </div>
@@ -601,7 +601,7 @@ async function init() {
 
 async function setupNemotron() {
   const path = document.getElementById('nemotronPath').value.trim();
-  if (!path) return alert('Please enter a path.');
+  if (!path) return alert('Enter a folder path for the panel data.');
 
   const status = document.getElementById('nemotronStatus');
   const text = document.getElementById('nemotronStatusText');
@@ -695,7 +695,7 @@ async function inferSpec() {
 
 async function runFullPipeline() {
   const text = document.getElementById('entityText').value.trim();
-  if (!text) return alert('Please enter your entity text.');
+  if (!text) return alert('Paste something for the panel to review first.');
 
   const btn = document.getElementById('goBtn');
   btn.disabled = true;
@@ -710,8 +710,8 @@ async function runFullPipeline() {
   const goalField = document.getElementById('goalText');
   const audienceField = document.getElementById('cohortDesc');
   if (!goalField.value.trim() || !audienceField.value.trim()) {
-    document.getElementById('pipelineProgressText').textContent = 'Inferring goal and audience from entity...';
-    logStep('Inferring goal and audience from entity...');
+    document.getElementById('pipelineProgressText').textContent = 'Understanding your goal and audience...';
+    logStep('Understanding what you want to optimize and who should judge it...');
     await inferSpec();
     if (goalField.value) logStep(`Goal: ${goalField.value}`, 'pos');
     if (audienceField.value) logStep(`Audience: ${audienceField.value}`, 'pos');
@@ -723,8 +723,7 @@ async function runFullPipeline() {
 
   try {
     // Phase 1: Create session
-    document.getElementById('pipelineProgressText').textContent = 'Creating session...';
-    logStep('Creating session...');
+    document.getElementById('pipelineProgressText').textContent = 'Setting up...';
     const sessResp = await fetch('/api/session', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -732,12 +731,12 @@ async function runFullPipeline() {
     });
     const sessData = await sessResp.json();
     sessionId = sessData.session_id;
-    logStep(`Session: ${sessionId}`, 'pos');
+    // session created silently
 
     // Phase 2: Suggest segments
-    document.getElementById('pipelineProgressText').textContent = 'Analyzing entity and choosing evaluator segments...';
+    document.getElementById('pipelineProgressText').textContent = 'Choosing panel segments...';
     document.getElementById('pipelineProgressBar').style.width = '10%';
-    logStep('Analyzing entity to find the right evaluator segments...');
+    logStep('Choosing the right panel segments...');
 
     const segResp = await fetch('/api/suggest-segments', {
       method: 'POST',
@@ -755,13 +754,13 @@ async function runFullPipeline() {
     const scale = panelSize / (totalSuggested || 1);
     segments.forEach(s => { s.count = Math.max(2, Math.round((s.count || 8) * scale)); });
 
-    segments.forEach(s => logStep(`  Segment: ${s.label} (${s.count} personas)`));
-    logStep(`${segments.length} segments identified`, 'pos');
+    segments.forEach(s => logStep(`  Added segment: ${s.label} (${s.count} people)`));
+    logStep(`${segments.length} segments chosen`, 'pos');
     document.getElementById('pipelineProgressBar').style.width = '20%';
 
     // Phase 3: Generate cohort
-    document.getElementById('pipelineProgressText').textContent = 'Generating evaluator personas...';
-    logStep('Generating realistic personas for each segment...');
+    document.getElementById('pipelineProgressText').textContent = 'Building your panel...';
+    logStep('Building panel members for each segment...');
 
     const desc = audienceCtx || `People evaluating: ${text.substring(0, 200)}`;
     const cohortResp = await fetch('/api/cohort/generate', {
@@ -789,7 +788,7 @@ async function runFullPipeline() {
       if (f.occupation) parts.push(f.occupation);
       logStep(`Filtered: ${parts.join(', ')}`, 'pos');
     }
-    logStep(`${cohortData.cohort_size} evaluators ready — ${src}`, 'pos');
+    logStep(`${cohortData.cohort_size} panel members ready — ${src}`, 'pos');
     if (panelSize < 40) {
       logStep(`Tip: a panel of 40-60 gives more reliable results across segments`, 'neu');
     }
@@ -797,7 +796,7 @@ async function runFullPipeline() {
 
     // Phase 4: Evaluate via SSE
     document.getElementById('pipelineProgressText').textContent = 'Evaluating...';
-    logStep('Starting evaluation — each evaluator scores your entity...');
+    logStep('Running the panel review — each member scores what you wrote...');
 
     await new Promise((resolve, reject) => {
       const params = new URLSearchParams({parallel: 5, bias_calibration: biasCal});
@@ -841,7 +840,7 @@ async function runFullPipeline() {
         resolve();
       });
 
-      es.onerror = () => { es.close(); reject(new Error('Connection lost')); };
+      es.onerror = () => { es.close(); reject(new Error('Connection lost — you can try again without losing your draft')); };
     });
 
   } catch (e) {
@@ -875,7 +874,7 @@ async function runDirections() {
 
   try {
     // Phase 1: Extract concerns from persuadable middle
-    document.getElementById('cfProgressText').textContent = 'Analyzing concerns from persuadable middle...';
+    document.getElementById('cfProgressText').textContent = 'Looking at what\u2019s holding back the on-the-fence group...';
     const persuadable = evalResultsData.filter(r => r && r.score >= 4 && r.score <= 7);
     const concerns = [];
     persuadable.forEach(r => {
@@ -888,11 +887,11 @@ async function runDirections() {
     concerns.slice(0, 8).forEach(c => {
       log.innerHTML += `<div style="color:var(--text2)">Concern: ${esc(c)}</div>`;
     });
-    log.innerHTML += `<div>${concerns.length} unique concerns from ${persuadable.length} persuadable evaluators</div>`;
+    log.innerHTML += `<div>${concerns.length} concerns from ${persuadable.length} on-the-fence panel members</div>`;
     document.getElementById('cfProgressBar').style.width = '15%';
 
     // Phase 2: LLM generates candidate changes from concerns
-    document.getElementById('cfProgressText').textContent = 'Generating candidate changes from concerns...';
+    document.getElementById('cfProgressText').textContent = 'Proposing changes to test...';
     const suggestResp = await fetch('/api/suggest-changes', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -974,7 +973,7 @@ async function runDirections() {
         resolve();
       });
 
-      es.onerror = () => { es.close(); reject(new Error('Connection lost')); };
+      es.onerror = () => { es.close(); reject(new Error('Connection lost — you can try again without losing your draft')); };
     });
 
   } catch (e) {
@@ -1086,7 +1085,7 @@ function renderGradientTable(results, changes, ranked) {
 // ── Step 5: Bias Audit ──
 
 function runBiasAudit() {
-  if (!sessionId) return alert('No session.');
+  if (!sessionId) return alert('Start with Step 1 to create a panel review.');
   const probes = [];
   if (document.getElementById('probeFraming').checked) probes.push('framing');
   if (document.getElementById('probeAuthority').checked) probes.push('authority');
@@ -1179,7 +1178,7 @@ function runBiasAudit() {
 
   es.onerror = () => {
     es.close();
-    document.getElementById('auditProgressText').textContent = 'Connection lost';
+    document.getElementById('auditProgressText').textContent = 'Connection lost — you can try again without losing your draft';
     btn.disabled = false;
   };
 }
