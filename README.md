@@ -35,7 +35,7 @@ Anything someone else evaluates.
 | **Pitch** — investor deck | VCs and angels at different stages | Whether the story lands, what questions they'd ask |
 | **Policy** — proposed regulation | Stakeholders by role, income, geography | Who supports it, who opposes, what compromise works |
 | **Content** — blog post, video | Readers at different expertise levels | Whether it hits the right level, what's confusing |
-| **Profile** — dating, professional bio | Population sample by age, education, occupation | How different demographics perceive you |
+| **Profile** — professional bio, personal brand | Population sample by age, education, occupation | How different demographics perceive you |
 
 SGO ships with a 1M-person census-grounded dataset ([Nemotron-Personas-USA](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA)) with structured demographics (age, sex, education, occupation, marital status, US geography) plus rich narrative fields — professional persona, skills and expertise, career goals, hobbies, cultural background, and personality. The narratives naturally encode things like seniority, industry, technical depth, and decision-making style, even though those aren't separate columns.
 

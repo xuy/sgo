@@ -63,7 +63,7 @@ Return JSON:
             "country": "USA",
             "education_level": "<high_school | bachelors | graduate | etc>",
             "occupation": "<specific job title>",
-            "marital_status": "<never_married | married | divorced | widowed | separated>",
+            "marital_status": "<single | married | other>",
             "interests": ["<hobby or skill, 3-5 items>"],
             "persona": "<200-400 word detailed persona narrative>",
             "segment": "{segment_label}"

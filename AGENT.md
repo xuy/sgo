@@ -49,7 +49,7 @@ This downloads the 1M-persona dataset (~2GB). Only needs to happen once.
 
 **Ask the user**:
 
-1. *"What are you optimizing? (product, resume, pitch, policy, dating profile, or describe your own)"*
+1. *"What are you optimizing? (product, resume, pitch, policy, profile, or describe your own)"*
 2. *"Describe it — or paste/point me to the document. I need what an evaluator would see."*
 3. *"Is there anything an evaluator should NOT see? (internal metrics, private details, etc.)"*
 
@@ -80,7 +80,7 @@ If the user doesn't have a document ready, use the appropriate template from `te
 | Resume | Company type, seniority, technical depth, industry |
 | Pitch | Investment stage, sector focus, check size |
 | Policy | Stakeholder role, income bracket, geography, property ownership |
-| Dating | Age bracket, life stage, education, occupation, geography |
+| Profile | Age bracket, life stage, education, occupation, geography |
 | Custom | Ask the user to name 3-4 dimensions |
 
 ### Build the cohort

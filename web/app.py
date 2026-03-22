@@ -160,8 +160,8 @@ Return JSON:
     ]
 }}
 
-Make segments specific to THIS domain. For a product, use buyer personas. For a dating profile,
-use different types of potential partners. For a resume, use different hiring managers. Etc.
+Make segments specific to THIS domain. For a product, use buyer personas.
+For a resume, use different hiring managers. For a pitch, use different investor types. Etc.
 Be concrete and relevant — no generic segments."""
 
     try:
