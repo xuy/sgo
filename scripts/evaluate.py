@@ -125,6 +125,7 @@ def evaluate_one(client, model, evaluator, entity_text, system_prompt=None):
         result = json.loads(content)
         result["_evaluator"] = {
             "name": evaluator["name"],
+            "user_id": evaluator.get("user_id"),
             "age": evaluator.get("age"),
             "city": evaluator.get("city"),
             "state": evaluator.get("state"),

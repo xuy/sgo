@@ -583,7 +583,7 @@ async def prepare_counterfactual(sid: str, req: CounterfactualRequest):
     expired = [k for k, v in _cf_pending.items() if now - v.get("ts", 0) > 600]
     for k in expired:
         del _cf_pending[k]
-    _cf_pending[ticket] = {"req": req, "ts": now}
+    _cf_pending[ticket] = {"req": req, "ts": now, "sid": sid}
     return {"ticket": ticket}
 
 
@@ -598,6 +598,8 @@ async def counterfactual_stream(sid: str, ticket: str):
     entry = _cf_pending.pop(ticket, None)
     if not entry:
         raise HTTPException(400, "Invalid or expired ticket")
+    if entry.get("sid") != sid:
+        raise HTTPException(403, "Ticket does not belong to this session")
     req = entry["req"]
 
     all_changes = req.changes
@@ -611,7 +613,7 @@ async def counterfactual_stream(sid: str, ticket: str):
         model = get_model()
         cohort = session["cohort"]
         eval_results = session["eval_results"]
-        cohort_map = {p["name"]: p for p in cohort}
+        cohort_map = {f"{p.get('name','')}_{p.get('user_id','')}": p for p in cohort}
 
         movable = [r for r in eval_results
                    if "score" in r and min_score <= r["score"] <= max_score]
@@ -659,7 +661,10 @@ async def counterfactual_stream(sid: str, ticket: str):
             }
             for fut in concurrent.futures.as_completed(futs):
                 idx = futs[fut]
-                result = fut.result()
+                try:
+                    result = fut.result()
+                except Exception as e:
+                    result = {"error": str(e), "_evaluator": {"name": "?"}}
                 results[idx] = result
                 done += 1
 
@@ -678,13 +683,14 @@ async def counterfactual_stream(sid: str, ticket: str):
                 yield {"event": "progress", "data": json.dumps(progress)}
 
         elapsed = time.time() - t0
-        gradient_text = analyze_gradient(results, all_changes,
-                                         goal_weights=goal_weights)
+        gradient_text, ranked_data = analyze_gradient(results, all_changes,
+                                                      goal_weights=goal_weights)
         session["gradient"] = gradient_text
 
         yield {"event": "complete", "data": json.dumps({
             "elapsed": round(elapsed, 1),
             "gradient": gradient_text,
+            "ranked": ranked_data,
             "results": results,
             "goal": goal if has_goal else None,
         })}
@@ -830,4 +836,4 @@ if __name__ == "__main__":
     import uvicorn
     print(f"\n  SGO Web Interface")
     print(f"  http://localhost:8000\n")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

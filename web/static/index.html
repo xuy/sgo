@@ -558,6 +558,17 @@ const TEMPLATES = {
 let sessionId = null;
 let evalResultsData = null;
 
+// XSS sanitization helper
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ── Init ──
 
 async function init() {
@@ -652,7 +663,7 @@ function goToStep(n) {
 
 function logStep(msg, cls = '') {
   const log = document.getElementById('evalLog');
-  log.innerHTML += `<div class="${cls}">${msg}</div>`;
+  log.innerHTML += `<div class="${esc(cls)}">${esc(msg)}</div>`;
   log.scrollTop = log.scrollHeight;
 }
 
@@ -875,7 +886,7 @@ async function runDirections() {
 
     const log = document.getElementById('cfLog');
     concerns.slice(0, 8).forEach(c => {
-      log.innerHTML += `<div style="color:var(--text2)">Concern: ${c}</div>`;
+      log.innerHTML += `<div style="color:var(--text2)">Concern: ${esc(c)}</div>`;
     });
     log.innerHTML += `<div>${concerns.length} unique concerns from ${persuadable.length} persuadable evaluators</div>`;
     document.getElementById('cfProgressBar').style.width = '15%';
@@ -891,7 +902,7 @@ async function runDirections() {
     suggestedChanges = suggestData.changes || [];
 
     suggestedChanges.forEach(c => {
-      log.innerHTML += `<div class="pos">Change: ${c.label} — ${c.description}</div>`;
+      log.innerHTML += `<div class="pos">Change: ${esc(c.label)} — ${esc(c.description)}</div>`;
     });
     log.scrollTop = log.scrollHeight;
     document.getElementById('cfProgressBar').style.width = '25%';
@@ -926,7 +937,7 @@ async function runDirections() {
       es.addEventListener('goal_weights', (e) => {
         const d = JSON.parse(e.data);
         document.getElementById('cfProgressText').textContent = d.message;
-        log.innerHTML += `<div>${d.message}</div>`;
+        log.innerHTML += `<div>${esc(d.message)}</div>`;
         log.scrollTop = log.scrollHeight;
       });
 
@@ -938,7 +949,7 @@ async function runDirections() {
 
         const delta = d.best_delta > 0 ? `+${d.best_delta}` : d.best_delta;
         const changeName = (suggestedChanges.find(c => c.id === d.best_change) || {}).label || d.best_change;
-        log.innerHTML += `<div>${d.name} (orig ${d.original_score}): best ${delta} from "${changeName}"</div>`;
+        log.innerHTML += `<div>${esc(d.name)} (orig ${d.original_score}): best ${delta} from "${esc(changeName)}"</div>`;
         log.scrollTop = log.scrollHeight;
       });
 
@@ -955,7 +966,7 @@ async function runDirections() {
           return;
         }
 
-        renderGradientTable(d.results, suggestedChanges);
+        renderGradientTable(d.results, suggestedChanges, d.ranked);
         document.getElementById('gradientText').textContent = d.gradient;
         document.getElementById('changesTested').textContent =
           suggestedChanges.map(c => `${c.label}: ${c.description}`).join('\n');
@@ -971,48 +982,55 @@ async function runDirections() {
   }
 }
 
-function renderGradientTable(results, changes) {
-  const valid = results.filter(r => r && r.counterfactuals);
-  const labels = {};
-  const descs = {};
-  changes.forEach(c => { labels[c.id] = c.label; descs[c.id] = c.description; });
-
-  // Aggregate with per-evaluator details
-  const byChange = {};
-  valid.forEach(r => {
-    const ev = r._evaluator || {};
-    (r.counterfactuals || []).forEach(cf => {
-      const cid = cf.change_id;
-      if (!byChange[cid]) byChange[cid] = {deltas: [], pos: 0, neg: 0, details: []};
-      const delta = cf.delta || 0;
-      byChange[cid].deltas.push(delta);
-      if (delta > 0) byChange[cid].pos++;
-      if (delta < 0) byChange[cid].neg++;
-      byChange[cid].details.push({
-        name: ev.name || '?',
-        age: ev.age || '',
-        occupation: ev.occupation || '',
-        delta: delta,
-        reasoning: cf.reasoning || '',
+function renderGradientTable(results, changes, ranked) {
+  // Use backend-provided ranked data (respects goal weights / VJP) when available,
+  // falling back to client-side aggregation only for legacy responses.
+  if (!ranked || !ranked.length) {
+    // Legacy fallback: recompute from raw results (unweighted)
+    const valid = results.filter(r => r && r.counterfactuals);
+    const labels = {};
+    const descs = {};
+    changes.forEach(c => { labels[c.id] = c.label; descs[c.id] = c.description; });
+    const byChange = {};
+    valid.forEach(r => {
+      const ev = r._evaluator || {};
+      (r.counterfactuals || []).forEach(cf => {
+        const cid = cf.change_id;
+        if (!byChange[cid]) byChange[cid] = {deltas: [], pos: 0, neg: 0, details: []};
+        const delta = cf.delta || 0;
+        byChange[cid].deltas.push(delta);
+        if (delta > 0) byChange[cid].pos++;
+        if (delta < 0) byChange[cid].neg++;
+        byChange[cid].details.push({
+          name: ev.name || '?', age: ev.age || '',
+          occupation: ev.occupation || '', delta, reasoning: cf.reasoning || '',
+        });
       });
     });
-  });
-
-  const ranked = Object.entries(byChange).map(([cid, d]) => {
-    const avg = d.deltas.reduce((a, b) => a + b, 0) / d.deltas.length;
-    const min = Math.min(...d.deltas);
-    const max = Math.max(...d.deltas);
-    d.details.sort((a, b) => b.delta - a.delta);
-    return {id: cid, label: labels[cid] || cid, desc: descs[cid] || '', avg, min, max, pos: d.pos, neg: d.neg, details: d.details};
-  });
-  ranked.sort((a, b) => b.avg - a.avg);
+    ranked = Object.entries(byChange).map(([cid, d]) => {
+      const avg = d.deltas.reduce((a, b) => a + b, 0) / d.deltas.length;
+      d.details.sort((a, b) => b.delta - a.delta);
+      return {
+        id: cid, label: labels[cid] || cid, desc: descs[cid] || '',
+        avg_delta: avg, min_delta: Math.min(...d.deltas), max_delta: Math.max(...d.deltas),
+        positive: d.pos, negative: d.neg, details: d.details,
+      };
+    });
+    ranked.sort((a, b) => b.avg_delta - a.avg_delta);
+  } else {
+    // Attach descriptions from changes list
+    const descs = {};
+    changes.forEach(c => { descs[c.id] = c.description; });
+    ranked.forEach(r => { if (!r.desc) r.desc = descs[r.id] || ''; });
+  }
 
   const tbody = document.querySelector('#gradientTable tbody');
   tbody.innerHTML = '';
   ranked.forEach((r, i) => {
-    const cls = r.avg >= 0 ? 'delta-pos' : 'delta-neg';
-    const barWidth = Math.min(Math.abs(r.avg) * 30, 120);
-    const barColor = r.avg >= 0 ? 'var(--green)' : 'var(--red)';
+    const avg = r.avg_delta;
+    const cls = avg >= 0 ? 'delta-pos' : 'delta-neg';
+    const barWidth = Math.min(Math.abs(avg) * 30, 120);
+    const barColor = avg >= 0 ? 'var(--green)' : 'var(--red)';
     const rowId = `gradient-detail-${i}`;
 
     // Summary row (clickable)
@@ -1020,35 +1038,36 @@ function renderGradientTable(results, changes) {
       <tr onclick="document.getElementById('${rowId}').classList.toggle('hidden')" style="cursor:pointer">
         <td>${i + 1}</td>
         <td>
-          <div style="font-weight:600">${r.label}</div>
-          <div style="font-size:0.75rem;color:var(--text2);margin-top:2px">${r.desc}</div>
+          <div style="font-weight:600">${esc(r.label)}</div>
+          <div style="font-size:0.75rem;color:var(--text2);margin-top:2px">${esc(r.desc)}</div>
         </td>
         <td class="${cls}">
-          ${r.avg >= 0 ? '+' : ''}${r.avg.toFixed(1)}
+          ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}
           <span class="delta-bar" style="width:${barWidth}px;background:${barColor};margin-left:8px"></span>
         </td>
-        <td style="color:var(--text2)">${r.min >= 0 ? '+' : ''}${r.min} to +${r.max}</td>
-        <td style="color:var(--green)">${r.pos}</td>
-        <td style="color:var(--red)">${r.neg}</td>
+        <td style="color:var(--text2)">${r.min_delta >= 0 ? '+' : ''}${r.min_delta} to +${r.max_delta}</td>
+        <td style="color:var(--green)">${r.positive}</td>
+        <td style="color:var(--red)">${r.negative}</td>
       </tr>
     `;
 
     // Detail row (hidden by default)
-    const helped = r.details.filter(d => d.delta > 0).slice(0, 5);
-    const hurt = r.details.filter(d => d.delta < 0).slice(0, 3);
-    const neutral = r.details.filter(d => d.delta === 0).length;
+    const details = r.details || [];
+    const helped = details.filter(d => d.delta > 0).slice(0, 5);
+    const hurt = details.filter(d => d.delta < 0).slice(0, 3);
+    const neutral = details.filter(d => d.delta === 0).length;
 
     let detailHtml = '<div style="padding:12px 16px;font-size:0.8rem;line-height:1.6">';
     if (helped.length) {
       detailHtml += '<div style="color:var(--green);font-weight:600;margin-bottom:4px">Helps:</div>';
       helped.forEach(d => {
-        detailHtml += `<div style="margin-left:12px;margin-bottom:4px">+${d.delta} <strong>${d.name}</strong> (${d.age}, ${d.occupation}): ${d.reasoning}</div>`;
+        detailHtml += `<div style="margin-left:12px;margin-bottom:4px">+${d.delta} <strong>${esc(d.name)}</strong> (${esc(d.age)}, ${esc(d.occupation)}): ${esc(d.reasoning)}</div>`;
       });
     }
     if (hurt.length) {
       detailHtml += '<div style="color:var(--red);font-weight:600;margin-top:8px;margin-bottom:4px">Hurts:</div>';
       hurt.forEach(d => {
-        detailHtml += `<div style="margin-left:12px;margin-bottom:4px">${d.delta} <strong>${d.name}</strong> (${d.age}, ${d.occupation}): ${d.reasoning}</div>`;
+        detailHtml += `<div style="margin-left:12px;margin-bottom:4px">${d.delta} <strong>${esc(d.name)}</strong> (${esc(d.age)}, ${esc(d.occupation)}): ${esc(d.reasoning)}</div>`;
       });
     }
     if (neutral) {
@@ -1121,7 +1140,7 @@ function runBiasAudit() {
 
     d.analyses.forEach(a => {
       if (a.error) {
-        tbody.innerHTML += `<tr><td>${a.probe}</td><td colspan="4">Error: ${a.error}</td></tr>`;
+        tbody.innerHTML += `<tr><td>${esc(a.probe)}</td><td colspan="4">Error: ${esc(a.error)}</td></tr>`;
         return;
       }
       const expected = baselines[a.probe];
@@ -1137,7 +1156,7 @@ function runBiasAudit() {
 
       tbody.innerHTML += `
         <tr>
-          <td style="font-weight:600">${a.probe}</td>
+          <td style="font-weight:600">${esc(a.probe)}</td>
           <td>${a.shifted_pct.toFixed(1)}%</td>
           <td>${a.avg_abs_delta.toFixed(2)}</td>
           <td style="color:var(--text2)">${expected !== undefined ? expected + '%' : '—'}</td>

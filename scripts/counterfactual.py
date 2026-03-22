@@ -89,10 +89,20 @@ def build_changes_block(changes):
     return "\n".join(lines)
 
 
+def _cohort_lookup(cohort_map, ev):
+    """Look up persona by composite key (name_user_id), falling back to name."""
+    name = ev.get("name", "")
+    uid = ev.get("user_id", "")
+    key = f"{name}_{uid}"
+    if key in cohort_map:
+        return cohort_map[key]
+    return cohort_map.get(name, {})
+
+
 def probe_one(client, model, eval_result, cohort_map, all_changes):
     ev = eval_result.get("_evaluator", {})
     name = ev.get("name", "")
-    persona_text = cohort_map.get(name, {}).get("persona", "")
+    persona_text = _cohort_lookup(cohort_map, ev).get("persona", "")
 
     prompt = PROBE_PROMPT.format(
         name=name, age=ev.get("age", ""),
@@ -150,10 +160,17 @@ def compute_goal_weights(client, model, eval_results, cohort_map, goal, parallel
     """Score each evaluator's relevance to the goal. Returns {name: weight}."""
     weights = {}
 
+    def _eval_key(ev):
+        """Composite key matching cohort_map keys to avoid name collisions."""
+        name = ev.get("name", "")
+        uid = ev.get("user_id", "")
+        return f"{name}_{uid}" if uid else name
+
     def score_one(r):
         ev = r.get("_evaluator", {})
         name = ev.get("name", "")
-        persona = cohort_map.get(name, {})
+        key = _eval_key(ev)
+        persona = _cohort_lookup(cohort_map, ev)
         prompt = GOAL_RELEVANCE_PROMPT.format(
             goal=goal, name=name, age=ev.get("age", ""),
             occupation=ev.get("occupation", ""),
@@ -170,15 +187,15 @@ def compute_goal_weights(client, model, eval_results, cohort_map, goal, parallel
             content = resp.choices[0].message.content
             content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
             data = json.loads(content)
-            return name, float(data.get("relevance", 0.5)), data.get("reasoning", "")
+            return key, float(data.get("relevance", 0.5)), data.get("reasoning", "")
         except Exception:
-            return name, 0.5, "default"
+            return key, 0.5, "default"
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
         futs = [pool.submit(score_one, r) for r in eval_results]
         for fut in concurrent.futures.as_completed(futs):
-            name, weight, reasoning = fut.result()
-            weights[name] = {"weight": weight, "reasoning": reasoning}
+            key, weight, reasoning = fut.result()
+            weights[key] = {"weight": weight, "reasoning": reasoning}
 
     return weights
 
@@ -186,22 +203,26 @@ def compute_goal_weights(client, model, eval_results, cohort_map, goal, parallel
 def analyze_gradient(results, all_changes, goal_weights=None):
     valid = [r for r in results if "counterfactuals" in r]
     if not valid:
-        return "No valid results."
+        return "No valid results.", []
 
     has_goal = goal_weights is not None
     labels = {c["id"]: c["label"] for c in all_changes}
     jacobian = defaultdict(list)
 
     for r in valid:
-        name = r["_evaluator"].get("name", "")
-        w = goal_weights.get(name, {}).get("weight", 1.0) if has_goal else 1.0
+        ev = r["_evaluator"]
+        name = ev.get("name", "")
+        uid = ev.get("user_id", "")
+        key = f"{name}_{uid}" if uid else name
+        w = goal_weights.get(key, {}).get("weight", 1.0) if has_goal else 1.0
         for cf in r.get("counterfactuals", []):
             jacobian[cf.get("change_id", "")].append({
                 "delta": cf.get("delta", 0),
                 "weighted_delta": cf.get("delta", 0) * w,
                 "weight": w,
                 "name": name,
-                "age": r["_evaluator"].get("age", ""),
+                "age": ev.get("age", ""),
+                "occupation": ev.get("occupation", ""),
                 "reasoning": cf.get("reasoning", ""),
             })
 
@@ -268,7 +289,22 @@ def analyze_gradient(results, all_changes, goal_weights=None):
                 lines.append(f"  {d['delta']} {d['name']} ({d['age']}){w_label}: {d['reasoning']}")
         lines.append("")
 
-    return "\n".join(lines)
+    # Return ranked data alongside text for structured consumers (web UI)
+    ranked_data = [{
+        "id": r["id"], "label": r["label"],
+        "avg_delta": round(r["avg_delta"], 2),
+        "raw_avg_delta": round(r["raw_avg_delta"], 2),
+        "max_delta": r["max_delta"], "min_delta": r["min_delta"],
+        "positive": r["positive"], "negative": r["negative"],
+        "n": r["n"],
+        "details": sorted([{
+            "name": d["name"], "age": d.get("age", ""),
+            "occupation": d.get("occupation", ""),
+            "delta": d["delta"], "reasoning": d.get("reasoning", ""),
+        } for d in r["details"]], key=lambda x: x["delta"], reverse=True),
+    } for r in ranked]
+
+    return "\n".join(lines), ranked_data
 
 
 def main():
@@ -300,7 +336,7 @@ def main():
         for cat in changes_data.values():
             all_changes.extend(cat if isinstance(cat, list) else cat.get("changes", []))
 
-    cohort_map = {p["name"]: p for p in cohort}
+    cohort_map = {f"{p.get('name','')}_{p.get('user_id','')}": p for p in cohort}
 
     movable = [r for r in eval_results
                 if "score" in r and args.min_score <= r["score"] <= args.max_score]
@@ -356,7 +392,7 @@ def main():
         relevant = sum(1 for v in goal_weights.values() if v["weight"] >= 0.5)
         print(f"  {relevant}/{len(goal_weights)} evaluators relevant to goal\n")
 
-    gradient = analyze_gradient(results, all_changes, goal_weights=goal_weights)
+    gradient, _ranked = analyze_gradient(results, all_changes, goal_weights=goal_weights)
     with open(out_dir / "gradient.md", "w") as f:
         f.write(gradient)
 
