@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SGO — Semantic Gradient Optimization</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --text: #e0e0e8;
+    --text2: #8888a0;
+    --accent: #6c5ce7;
+    --accent2: #a29bfe;
+    --green: #00b894;
+    --yellow: #fdcb6e;
+    --red: #e17055;
+    --orange: #e67e22;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+
+  /* Header */
+  header {
+    text-align: center;
+    padding: 48px 0 32px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  header p { color: var(--text2); margin-top: 8px; font-size: 1rem; }
+  .config-badge {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 4px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 0.8rem;
+    color: var(--text2);
+  }
+  .config-badge.ok { border-color: var(--green); color: var(--green); }
+  .config-badge.warn { border-color: var(--yellow); color: var(--yellow); }
+
+  /* Steps */
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    margin-bottom: 20px;
+    transition: border-color 0.2s;
+  }
+  .step.active { border-color: var(--accent); }
+  .step.done { border-color: var(--green); }
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .step-num {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .step.active .step-num { border-color: var(--accent); color: var(--accent); }
+  .step.done .step-num { border-color: var(--green); background: var(--green); color: var(--bg); }
+  .step-title { font-size: 1.1rem; font-weight: 600; }
+  .step-desc { color: var(--text2); font-size: 0.9rem; margin-bottom: 16px; }
+
+  /* Forms */
+  textarea, input, select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 12px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+    transition: border-color 0.2s;
+  }
+  textarea:focus, input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  textarea { min-height: 160px; }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--text2);
+  }
+  .field { margin-bottom: 16px; }
+
+  /* Buttons */
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  button:hover { opacity: 0.9; }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* Segments editor */
+  .segments-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .seg-row {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .seg-row input:first-child { flex: 3; }
+  .seg-row input:nth-child(2) { flex: 1; max-width: 80px; text-align: center; }
+  .seg-row button { padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); }
+
+  /* Progress */
+  .progress-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 12px 0;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 3px;
+    transition: width 0.3s;
+    width: 0%;
+  }
+  .progress-text {
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 8px;
+  }
+  .eval-log {
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.8rem;
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+  }
+  .eval-log div { padding: 2px 0; }
+  .eval-log .pos { color: var(--green); }
+  .eval-log .neu { color: var(--yellow); }
+  .eval-log .neg { color: var(--red); }
+  .eval-log .err { color: var(--red); opacity: 0.7; }
+
+  /* Results */
+  .score-big {
+    font-size: 3rem;
+    font-weight: 700;
+    text-align: center;
+    padding: 24px;
+  }
+  .score-big span { font-size: 1.2rem; color: var(--text2); font-weight: 400; }
+  .stats-row {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin: 16px 0;
+  }
+  .stat {
+    text-align: center;
+  }
+  .stat-val { font-size: 1.5rem; font-weight: 600; }
+  .stat-label { font-size: 0.8rem; color: var(--text2); }
+  .stat.pos .stat-val { color: var(--green); }
+  .stat.neu .stat-val { color: var(--yellow); }
+  .stat.neg .stat-val { color: var(--red); }
+
+  .results-details {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+    white-space: pre-wrap;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.8rem;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+
+  /* Changes editor */
+  .change-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 10px;
+  }
+  .change-card .field { margin-bottom: 10px; }
+  .change-card input, .change-card textarea { background: var(--bg); }
+  .change-card textarea { min-height: 60px; }
+  .change-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .change-header span { font-weight: 600; font-size: 0.9rem; }
+
+  /* Gradient */
+  .gradient-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.85rem;
+  }
+  .gradient-table th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    color: var(--text2);
+    font-weight: 500;
+  }
+  .gradient-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .gradient-table tr:hover { background: var(--surface2); }
+  .delta-pos { color: var(--green); font-weight: 600; }
+  .delta-neg { color: var(--red); font-weight: 600; }
+  .delta-bar {
+    height: 8px;
+    border-radius: 4px;
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  /* Templates */
+  .template-chips {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .template-chip {
+    padding: 6px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: var(--text2);
+    transition: all 0.2s;
+  }
+  .template-chip:hover { border-color: var(--accent); color: var(--text); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .container { padding: 16px 12px; }
+    .step { padding: 20px; }
+    .stats-row { gap: 20px; }
+    header h1 { font-size: 1.5rem; }
+  }
+
+  /* Utility */
+  .hidden { display: none !important; }
+  .mt-12 { margin-top: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .mb-8 { margin-bottom: 8px; }
+  .text-center { text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Semantic Gradient Optimization</h1>
+    <p>Evaluate anything against a synthetic panel. Find what to change first.</p>
+    <div id="configBadge" class="config-badge">checking...</div>
+  </header>
+
+  <!-- STEP 1: Entity -->
+  <div class="step active" id="step1">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">Describe what you're optimizing</div>
+    </div>
+    <p class="step-desc">Paste your landing page copy, resume, pitch deck text, policy document, or any other entity.</p>
+
+    <div class="template-chips">
+      <span class="template-chip" onclick="loadTemplate('product')">Product</span>
+      <span class="template-chip" onclick="loadTemplate('resume')">Resume</span>
+      <span class="template-chip" onclick="loadTemplate('pitch')">Pitch</span>
+    </div>
+
+    <div class="field">
+      <textarea id="entityText" placeholder="Paste your entity here... (landing page, resume, pitch, policy, etc.)"></textarea>
+    </div>
+    <button onclick="saveEntity()">Continue</button>
+  </div>
+
+  <!-- STEP 2: Cohort -->
+  <div class="step hidden" id="step2">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">Build your evaluator panel</div>
+    </div>
+    <p class="step-desc">Define audience segments. The LLM generates realistic personas for each.</p>
+
+    <div class="field">
+      <label>Audience context</label>
+      <input type="text" id="cohortDesc" placeholder="e.g. 'Potential customers for a B2B SaaS analytics tool'">
+    </div>
+
+    <label>Segments</label>
+    <div id="segmentsList" class="segments-list"></div>
+    <div class="btn-row">
+      <button class="secondary" onclick="addSegment()">+ Add segment</button>
+      <button onclick="generateCohort()" id="genCohortBtn">Generate cohort</button>
+    </div>
+
+    <div id="cohortProgress" class="hidden mt-16">
+      <div class="progress-text" id="cohortProgressText">Generating personas...</div>
+      <div class="progress-bar"><div class="progress-fill" id="cohortProgressBar"></div></div>
+    </div>
+
+    <div id="cohortResult" class="hidden mt-16">
+      <div class="stat text-center">
+        <div class="stat-val" id="cohortCount">0</div>
+        <div class="stat-label">evaluators generated</div>
+      </div>
+      <button class="mt-12" onclick="goToStep(3)">Continue to evaluation</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: Evaluate -->
+  <div class="step hidden" id="step3">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">Run evaluation</div>
+    </div>
+    <p class="step-desc">Each evaluator scores your entity 1-10 with reasoning.</p>
+
+    <div class="btn-row">
+      <button onclick="runEval()" id="evalBtn">Evaluate</button>
+      <div style="flex:1"></div>
+      <label style="display:flex;align-items:center;gap:6px;margin:0">
+        <span style="font-size:0.8rem;color:var(--text2)">Parallel:</span>
+        <input type="number" id="evalParallel" value="5" min="1" max="20"
+               style="width:60px;padding:6px;text-align:center">
+      </label>
+    </div>
+
+    <div id="evalProgress" class="hidden mt-16">
+      <div class="progress-text" id="evalProgressText">Evaluating...</div>
+      <div class="progress-bar"><div class="progress-fill" id="evalProgressBar"></div></div>
+      <div class="eval-log" id="evalLog"></div>
+    </div>
+
+    <div id="evalResults" class="hidden mt-16">
+      <div class="score-big" id="avgScore">0<span>/10</span></div>
+      <div class="stats-row">
+        <div class="stat pos"><div class="stat-val" id="posCount">0</div><div class="stat-label">positive</div></div>
+        <div class="stat neu"><div class="stat-val" id="neuCount">0</div><div class="stat-label">neutral</div></div>
+        <div class="stat neg"><div class="stat-val" id="negCount">0</div><div class="stat-label">negative</div></div>
+      </div>
+      <details>
+        <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full analysis</summary>
+        <div class="results-details" id="evalAnalysis"></div>
+      </details>
+      <button class="mt-16" onclick="goToStep(4)">Continue to gradient</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: Counterfactual -->
+  <div class="step hidden" id="step4">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div class="step-title">Find the highest-impact changes</div>
+    </div>
+    <p class="step-desc">List hypothetical changes. Undecided evaluators (scores 4-7) re-evaluate each one.</p>
+
+    <div id="changesList"></div>
+    <div class="btn-row mb-8">
+      <button class="secondary" onclick="addChange()">+ Add change</button>
+    </div>
+    <div class="btn-row">
+      <button onclick="runCounterfactual()" id="cfBtn">Compute gradient</button>
+      <div style="flex:1"></div>
+      <label style="display:flex;align-items:center;gap:6px;margin:0">
+        <span style="font-size:0.8rem;color:var(--text2)">Score range:</span>
+        <input type="number" id="cfMin" value="4" min="1" max="10" style="width:50px;padding:6px;text-align:center">
+        <span style="color:var(--text2)">-</span>
+        <input type="number" id="cfMax" value="7" min="1" max="10" style="width:50px;padding:6px;text-align:center">
+      </label>
+    </div>
+
+    <div id="cfProgress" class="hidden mt-16">
+      <div class="progress-text" id="cfProgressText">Probing...</div>
+      <div class="progress-bar"><div class="progress-fill" id="cfProgressBar"></div></div>
+      <div class="eval-log" id="cfLog"></div>
+    </div>
+
+    <div id="cfResults" class="hidden mt-16">
+      <h3 style="margin-bottom:12px">Semantic Gradient</h3>
+      <table class="gradient-table" id="gradientTable">
+        <thead>
+          <tr><th>#</th><th>Change</th><th>Avg Impact</th><th>Range</th><th>Helps</th><th>Hurts</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <details class="mt-12">
+        <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full gradient output</summary>
+        <div class="results-details" id="gradientText"></div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<script>
+const TEMPLATES = {
+  product: `# [Product Name]
+
+## One-liner
+<!-- What it does in one sentence -->
+
+## Key features
+- Feature 1
+- Feature 2
+- Feature 3
+
+## Pricing
+<!-- Tiers, free plan, usage-based, etc. -->
+
+## Trust signals
+<!-- SOC2, customer count, funding, team size, etc. -->
+
+## Target user
+<!-- Who is this for? -->
+
+## What's NOT included
+<!-- Known limitations, missing features, roadmap items -->`,
+  resume: `# [Your Name]
+
+## Target role
+<!-- What position you're applying for -->
+
+## Summary
+<!-- 2-3 sentence professional summary -->
+
+## Experience
+- **[Company]** — [Role] (dates)
+  Key achievements...
+
+## Education
+- [Degree], [School], [Year]
+
+## Skills
+- Skill 1, Skill 2, Skill 3`,
+  pitch: `# [Company Name]
+
+## Problem
+<!-- What pain point do you solve? -->
+
+## Solution
+<!-- Your product/approach in 2-3 sentences -->
+
+## Market
+<!-- TAM/SAM/SOM or market description -->
+
+## Traction
+<!-- Revenue, users, growth rate -->
+
+## Team
+<!-- Key founders and their backgrounds -->
+
+## Ask
+<!-- Funding amount and use of funds -->`
+};
+
+let sessionId = null;
+let evalResultsData = null;
+
+// ── Init ──
+
+async function init() {
+  const resp = await fetch('/api/config');
+  const cfg = await resp.json();
+  const badge = document.getElementById('configBadge');
+  if (cfg.has_api_key) {
+    badge.textContent = cfg.model;
+    badge.className = 'config-badge ok';
+  } else {
+    badge.textContent = 'No API key — set LLM_API_KEY in .env';
+    badge.className = 'config-badge warn';
+  }
+
+  // Default segments
+  addSegment('Early adopter, tech-savvy', 8);
+  addSegment('Mainstream user, non-technical', 8);
+  addSegment('Budget-conscious comparison shopper', 8);
+  addSegment('Enterprise decision-maker', 8);
+
+  // Default changes
+  addChange('Add free tier', 'Introduce a generous free plan that lets users try core features with no credit card required.');
+  addChange('Add social proof', 'Display customer logos, case studies, and specific metrics (e.g., "Used by 5,000 teams") prominently on the page.');
+  addChange('Lower price by 40%', 'Reduce all paid plan prices by 40% across the board.');
+}
+
+// ── Templates ──
+
+function loadTemplate(name) {
+  document.getElementById('entityText').value = TEMPLATES[name] || '';
+}
+
+// ── Step navigation ──
+
+function goToStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`step${i}`);
+    if (i < n) {
+      el.classList.remove('hidden', 'active');
+      el.classList.add('done');
+    } else if (i === n) {
+      el.classList.remove('hidden', 'done');
+      el.classList.add('active');
+    } else {
+      el.classList.add('hidden');
+      el.classList.remove('active', 'done');
+    }
+  }
+}
+
+// ── Step 1: Entity ──
+
+async function saveEntity() {
+  const text = document.getElementById('entityText').value.trim();
+  if (!text) return alert('Please enter your entity text.');
+
+  const resp = await fetch('/api/session', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({entity_text: text}),
+  });
+  const data = await resp.json();
+  sessionId = data.session_id;
+
+  // Pre-fill cohort description from first line
+  const firstLine = text.split('\n').find(l => l.trim().length > 2) || '';
+  const desc = document.getElementById('cohortDesc');
+  if (!desc.value) desc.value = `People evaluating: ${firstLine.replace(/^#+\s*/, '').trim()}`;
+
+  goToStep(2);
+}
+
+// ── Step 2: Cohort ──
+
+function addSegment(label = '', count = 8) {
+  const list = document.getElementById('segmentsList');
+  const row = document.createElement('div');
+  row.className = 'seg-row';
+  row.innerHTML = `
+    <input type="text" placeholder="Segment description" value="${label}">
+    <input type="number" value="${count}" min="1" max="20">
+    <button onclick="this.parentElement.remove()" title="Remove">&times;</button>
+  `;
+  list.appendChild(row);
+}
+
+async function generateCohort() {
+  const desc = document.getElementById('cohortDesc').value.trim();
+  if (!desc) return alert('Please add audience context.');
+
+  const rows = document.querySelectorAll('#segmentsList .seg-row');
+  const segments = [];
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const label = inputs[0].value.trim();
+    const count = parseInt(inputs[1].value) || 5;
+    if (label) segments.push({label, count});
+  });
+
+  if (segments.length === 0) return alert('Add at least one segment.');
+
+  const btn = document.getElementById('genCohortBtn');
+  btn.disabled = true;
+  const progress = document.getElementById('cohortProgress');
+  progress.classList.remove('hidden');
+  document.getElementById('cohortProgressBar').style.width = '30%';
+  document.getElementById('cohortProgressText').textContent = 'Generating personas (this may take 30-60s)...';
+
+  try {
+    const resp = await fetch('/api/cohort/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({description: desc, segments, parallel: 3}),
+    });
+    const data = await resp.json();
+    sessionId = data.session_id;
+
+    // Update entity text in session
+    const entityText = document.getElementById('entityText').value.trim();
+    if (entityText) {
+      await fetch('/api/session', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entity_text: entityText}),
+      }).then(r => r.json()).then(d => { sessionId = d.session_id; });
+      // Upload cohort to new session
+      await fetch(`/api/cohort/upload/${sessionId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data.cohort),
+      });
+    }
+
+    document.getElementById('cohortProgressBar').style.width = '100%';
+    document.getElementById('cohortCount').textContent = data.cohort_size;
+    document.getElementById('cohortResult').classList.remove('hidden');
+    document.getElementById('cohortProgressText').textContent = 'Done!';
+  } catch (e) {
+    alert('Error generating cohort: ' + e.message);
+    document.getElementById('cohortProgressText').textContent = 'Failed';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Step 3: Evaluate ──
+
+function runEval() {
+  if (!sessionId) return alert('No session.');
+  const parallel = parseInt(document.getElementById('evalParallel').value) || 5;
+  const btn = document.getElementById('evalBtn');
+  btn.disabled = true;
+
+  document.getElementById('evalProgress').classList.remove('hidden');
+  document.getElementById('evalResults').classList.add('hidden');
+  document.getElementById('evalLog').innerHTML = '';
+
+  const es = new EventSource(`/api/evaluate/stream/${sessionId}?parallel=${parallel}`);
+
+  es.addEventListener('start', (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById('evalProgressText').textContent =
+      `Evaluating ${d.total} evaluators (${d.model})...`;
+  });
+
+  es.addEventListener('progress', (e) => {
+    const d = JSON.parse(e.data);
+    const pct = Math.round(d.done / d.total * 100);
+    document.getElementById('evalProgressBar').style.width = pct + '%';
+    document.getElementById('evalProgressText').textContent =
+      `${d.done}/${d.total} evaluated`;
+
+    const log = document.getElementById('evalLog');
+    const cls = d.error ? 'err' : d.action === 'positive' ? 'pos' : d.action === 'negative' ? 'neg' : 'neu';
+    const icon = d.error ? 'ERR' : d.action === 'positive' ? '+' : d.action === 'negative' ? '-' : '~';
+    const score = d.score != null ? `${d.score}/10` : '';
+    log.innerHTML += `<div class="${cls}">[${d.done}/${d.total}] ${d.name}: ${icon} ${score}</div>`;
+    log.scrollTop = log.scrollHeight;
+  });
+
+  es.addEventListener('complete', (e) => {
+    es.close();
+    const d = JSON.parse(e.data);
+    evalResultsData = d.results;
+
+    document.getElementById('evalProgressBar').style.width = '100%';
+    document.getElementById('evalProgressText').textContent =
+      `Done in ${d.elapsed}s`;
+
+    document.getElementById('avgScore').innerHTML = `${d.avg_score}<span>/10</span>`;
+    document.getElementById('posCount').textContent = d.positive;
+    document.getElementById('neuCount').textContent = d.neutral;
+    document.getElementById('negCount').textContent = d.negative;
+    document.getElementById('evalAnalysis').textContent = d.analysis;
+    document.getElementById('evalResults').classList.remove('hidden');
+    btn.disabled = false;
+  });
+
+  es.onerror = () => {
+    es.close();
+    document.getElementById('evalProgressText').textContent = 'Connection lost';
+    btn.disabled = false;
+  };
+}
+
+// ── Step 4: Counterfactual ──
+
+let changeCounter = 0;
+
+function addChange(label = '', description = '') {
+  changeCounter++;
+  const list = document.getElementById('changesList');
+  const card = document.createElement('div');
+  card.className = 'change-card';
+  card.dataset.id = `change_${changeCounter}`;
+  card.innerHTML = `
+    <div class="change-header">
+      <span>Change ${changeCounter}</span>
+      <button class="secondary" style="padding:4px 10px;font-size:0.8rem" onclick="this.closest('.change-card').remove()">Remove</button>
+    </div>
+    <div class="field">
+      <label>Label</label>
+      <input type="text" class="change-label" placeholder="e.g. Add free tier" value="${label}">
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea class="change-desc" placeholder="What specifically changes? Be detailed.">${description}</textarea>
+    </div>
+  `;
+  list.appendChild(card);
+}
+
+function getChanges() {
+  const cards = document.querySelectorAll('.change-card');
+  const changes = [];
+  cards.forEach(card => {
+    const label = card.querySelector('.change-label').value.trim();
+    const desc = card.querySelector('.change-desc').value.trim();
+    if (label && desc) {
+      changes.push({id: card.dataset.id, label, description: desc});
+    }
+  });
+  return changes;
+}
+
+function runCounterfactual() {
+  const changes = getChanges();
+  if (changes.length === 0) return alert('Add at least one change.');
+  if (!sessionId) return alert('No session.');
+
+  const minScore = parseInt(document.getElementById('cfMin').value) || 4;
+  const maxScore = parseInt(document.getElementById('cfMax').value) || 7;
+  const btn = document.getElementById('cfBtn');
+  btn.disabled = true;
+
+  document.getElementById('cfProgress').classList.remove('hidden');
+  document.getElementById('cfResults').classList.add('hidden');
+  document.getElementById('cfLog').innerHTML = '';
+
+  const params = new URLSearchParams({
+    changes_json: JSON.stringify(changes),
+    min_score: minScore,
+    max_score: maxScore,
+    parallel: 5,
+  });
+
+  const es = new EventSource(`/api/counterfactual/stream/${sessionId}?${params}`);
+
+  es.addEventListener('start', (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById('cfProgressText').textContent =
+      `Probing ${d.total} evaluators across ${d.changes} changes...`;
+  });
+
+  es.addEventListener('progress', (e) => {
+    const d = JSON.parse(e.data);
+    const pct = Math.round(d.done / d.total * 100);
+    document.getElementById('cfProgressBar').style.width = pct + '%';
+    document.getElementById('cfProgressText').textContent = `${d.done}/${d.total} probed`;
+
+    const log = document.getElementById('cfLog');
+    const delta = d.best_delta > 0 ? `+${d.best_delta}` : d.best_delta;
+    log.innerHTML += `<div>${d.name} (orig ${d.original_score}): best ${delta} from "${d.best_change}"</div>`;
+    log.scrollTop = log.scrollHeight;
+  });
+
+  es.addEventListener('complete', (e) => {
+    es.close();
+    const d = JSON.parse(e.data);
+
+    document.getElementById('cfProgressBar').style.width = '100%';
+    document.getElementById('cfProgressText').textContent = d.elapsed ? `Done in ${d.elapsed}s` : 'Done';
+
+    if (d.error) {
+      document.getElementById('cfProgressText').textContent = d.error;
+      btn.disabled = false;
+      return;
+    }
+
+    // Parse gradient into table
+    renderGradientTable(d.results, changes);
+    document.getElementById('gradientText').textContent = d.gradient;
+    document.getElementById('cfResults').classList.remove('hidden');
+    btn.disabled = false;
+  });
+
+  es.onerror = () => {
+    es.close();
+    document.getElementById('cfProgressText').textContent = 'Connection lost';
+    btn.disabled = false;
+  };
+}
+
+function renderGradientTable(results, changes) {
+  const valid = results.filter(r => r && r.counterfactuals);
+  const labels = {};
+  changes.forEach(c => { labels[c.id] = c.label; });
+
+  // Aggregate
+  const byChange = {};
+  valid.forEach(r => {
+    (r.counterfactuals || []).forEach(cf => {
+      const cid = cf.change_id;
+      if (!byChange[cid]) byChange[cid] = {deltas: [], pos: 0, neg: 0};
+      byChange[cid].deltas.push(cf.delta || 0);
+      if ((cf.delta || 0) > 0) byChange[cid].pos++;
+      if ((cf.delta || 0) < 0) byChange[cid].neg++;
+    });
+  });
+
+  const ranked = Object.entries(byChange).map(([cid, d]) => {
+    const avg = d.deltas.reduce((a, b) => a + b, 0) / d.deltas.length;
+    const min = Math.min(...d.deltas);
+    const max = Math.max(...d.deltas);
+    return {id: cid, label: labels[cid] || cid, avg, min, max, pos: d.pos, neg: d.neg};
+  });
+  ranked.sort((a, b) => b.avg - a.avg);
+
+  const tbody = document.querySelector('#gradientTable tbody');
+  tbody.innerHTML = '';
+  ranked.forEach((r, i) => {
+    const cls = r.avg >= 0 ? 'delta-pos' : 'delta-neg';
+    const barWidth = Math.min(Math.abs(r.avg) * 30, 120);
+    const barColor = r.avg >= 0 ? 'var(--green)' : 'var(--red)';
+    tbody.innerHTML += `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${r.label}</td>
+        <td class="${cls}">
+          ${r.avg >= 0 ? '+' : ''}${r.avg.toFixed(1)}
+          <span class="delta-bar" style="width:${barWidth}px;background:${barColor};margin-left:8px"></span>
+        </td>
+        <td style="color:var(--text2)">${r.min >= 0 ? '+' : ''}${r.min} to +${r.max}</td>
+        <td style="color:var(--green)">${r.pos}</td>
+        <td style="color:var(--red)">${r.neg}</td>
+      </tr>
+    `;
+  });
+}
+
+// Boot
+init();
+</script>
+</body>
+</html>
