@@ -1,0 +1,27 @@
+[
+  {
+    "id": "free_tier",
+    "label": "Add free tier",
+    "description": "Add a free tier: 1 repo, 20 reviews/month, 1 user. No credit card required. This lets developers try the product before committing budget."
+  },
+  {
+    "id": "soc2",
+    "label": "Get SOC 2 certified",
+    "description": "Achieve SOC 2 Type II certification. Display the badge prominently. This signals enterprise-grade security practices and is often a procurement requirement."
+  },
+  {
+    "id": "self_hosted",
+    "label": "Add self-hosted option",
+    "description": "Offer a self-hosted deployment option for Enterprise tier. Code never leaves the customer's infrastructure. Available as Docker image or Kubernetes helm chart."
+  },
+  {
+    "id": "customer_logos",
+    "label": "Add recognizable customer logos",
+    "description": "Add logos of 3-5 well-known companies using the product. Include brief case studies: 'Acme Corp reduced review time by 60%' style social proof."
+  },
+  {
+    "id": "lower_price",
+    "label": "Drop Team price to $69/mo",
+    "description": "Reduce Team tier from $99/mo to $69/mo. Keep all features the same. This brings the per-seat cost below the psychological $7/user threshold for a 10-person team."
+  }
+]

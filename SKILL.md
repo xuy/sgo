@@ -102,6 +102,16 @@ uv run python scripts/evaluate.py \
   --parallel 5
 ```
 
+To enable bias calibration (reduces framing/authority/order artifacts for more realistic scores):
+```bash
+uv run python scripts/evaluate.py \
+  --entity entities/<name>.md \
+  --cohort data/cohort.json \
+  --tag <run_tag> \
+  --bias-calibration \
+  --parallel 5
+```
+
 Present: avg score, breakdown by segment, top attractions, top concerns, dealbreakers, most/least receptive evaluators with quotes.
 
 Ask: **"Anything surprising? Want to dig into a segment?"**
@@ -134,6 +144,34 @@ Ask: **"Which change do you want to make first?"**
 3. Compare: `uv run python scripts/compare.py --runs <old> <new>`
 4. Show delta, new attractions, resolved concerns
 5. Ask: **"Another round, or are we good?"**
+
+---
+
+## Phase 6 — Bias Audit (Optional)
+
+Run when the user wants to validate panel fidelity or asks "how realistic are these evaluations?" This measures cognitive biases in the evaluator pipeline and compares to human baselines (Tversky & Kahneman framing, Milgram authority).
+
+```bash
+cd $SGO_DIR
+uv run python scripts/bias_audit.py \
+  --entity entities/<name>.md \
+  --cohort data/cohort.json \
+  --probes framing authority order \
+  --sample 10 \
+  --parallel 5
+```
+
+- `--probes`: which biases to test (framing, authority, order — or any subset)
+- `--sample`: number of evaluators to audit (10 is fast; use full cohort for thorough audit)
+
+Output: `results/bias_audit/report.md` with per-probe analysis and gap vs. human baselines.
+
+If biases are detected:
+- **Over-biased**: Re-run evaluation with `--bias-calibration` flag
+- **Under-biased**: Consider if the panel is too rational for the domain
+- **Order effects**: Standardize entity format or average across orderings
+
+Ask: **"Want to see how your panel's cognitive biases compare to human baselines?"**
 
 ---
 

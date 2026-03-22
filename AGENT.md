@@ -113,6 +113,8 @@ uv run python scripts/evaluate.py \
   --parallel 5
 ```
 
+Add `--bias-calibration` to inject CoBRA-inspired bias calibration instructions that reduce framing, authority, and order artifacts for more realistic evaluations.
+
 **Present results to the user**:
 
 1. Overall score distribution (avg, positive %, negative %)
@@ -183,6 +185,34 @@ Repeat until the user is satisfied or diminishing returns are clear.
 
 ---
 
+## Phase 6 — Bias Audit (Optional)
+
+Run when the user questions evaluation fidelity, or proactively after the first evaluation to establish a baseline.
+
+```bash
+uv run python scripts/bias_audit.py \
+  --entity entities/<name>.md \
+  --cohort data/cohort.json \
+  --probes framing authority order \
+  --sample 10 \
+  --parallel 5
+```
+
+This runs CoBRA-inspired experiments (arXiv:2509.13588) through SGO's pipeline:
+
+- **Framing probe**: Same entity rewritten with gain vs. loss framing → measures if LLM evaluators are over/under-sensitive vs. the ~30% human baseline (Tversky & Kahneman, 1981)
+- **Authority probe**: Entity with/without credibility signals → measures authority bias vs. ~20% human baseline
+- **Order probe**: Sections reordered → measures anchoring effects (should be ~0%)
+
+**Present**: Per-probe shift %, comparison to human baselines, overall assessment (over-biased / under-biased / well-calibrated).
+
+**If over-biased**: Suggest re-running evaluation with `--bias-calibration` flag.
+**If under-biased**: Note that the panel may be more rational than real humans — this may be acceptable or not depending on the domain.
+
+**Ask**: *"Your panel shows [X]% framing sensitivity (human baseline: ~30%). Want to run with bias calibration enabled?"*
+
+---
+
 ## Decision Tree
 
 ```
@@ -212,6 +242,12 @@ User wants optimization?
 User made changes?
   ├─ Yes → Phase 5: re-evaluate, compare
   └─ No  → done
+  │
+  ▼
+User questions fidelity / wants validation?
+  ├─ Yes → Phase 6: bias audit
+  │         └─ Over-biased? → re-run with --bias-calibration
+  └─ No  → done
 ```
 
 ---
@@ -230,8 +266,9 @@ User made changes?
 │   ├── persona_loader.py  # Load + filter personas
 │   ├── stratified_sampler.py
 │   ├── generate_cohort.py # LLM-generate personas when no dataset fits
-│   ├── evaluate.py        # f(θ, x) scorer
+│   ├── evaluate.py        # f(θ, x) scorer (supports --bias-calibration)
 │   ├── counterfactual.py  # Semantic gradient probe
+│   ├── bias_audit.py      # CoBRA-inspired cognitive bias measurement
 │   └── compare.py         # Cross-run diff
 ├── templates/
 │   ├── entity_product.md
