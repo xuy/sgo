@@ -12,6 +12,13 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "sse-starlette>=2.0.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
