@@ -350,13 +350,19 @@
     </div>
 
     <div class="field">
-      <label>Goal — what outcome do you want?</label>
-      <input type="text" id="goalText" placeholder="Will be auto-suggested from your entity">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <label>Goal — what outcome do you want?</label>
+        <button class="secondary" style="padding:4px 12px;font-size:0.75rem" onclick="inferSpec()">Suggest</button>
+      </div>
+      <input type="text" id="goalText" placeholder="e.g. 'Close enterprise deals' or 'Get hired at a Series B startup'">
     </div>
 
     <div class="field">
-      <label>Audience — who are you trying to reach?</label>
-      <input type="text" id="cohortDesc" placeholder="Will be auto-suggested from your entity">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <label>Audience — who are you trying to reach?</label>
+        <button class="secondary" style="padding:4px 12px;font-size:0.75rem" onclick="inferSpec()">Suggest</button>
+      </div>
+      <input type="text" id="cohortDesc" placeholder="e.g. 'Women aged 25-40 in Chicago' or 'Enterprise CTOs'">
     </div>
 
     <details class="mb-8">
