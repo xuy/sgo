@@ -943,7 +943,8 @@ async function runDirections() {
         document.getElementById('cfProgressText').textContent = `${d.done}/${d.total} probed`;
 
         const delta = d.best_delta > 0 ? `+${d.best_delta}` : d.best_delta;
-        log.innerHTML += `<div>${d.name} (orig ${d.original_score}): best ${delta} from "${d.best_change}"</div>`;
+        const changeName = (suggestedChanges.find(c => c.id === d.best_change) || {}).label || d.best_change;
+        log.innerHTML += `<div>${d.name} (orig ${d.original_score}): best ${delta} from "${changeName}"</div>`;
         log.scrollTop = log.scrollHeight;
       });
 
