@@ -67,6 +67,7 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 
 # In-memory store for active sessions
 sessions: dict = {}
+SESSION_MAX_AGE_HOURS = 24
 
 # Nemotron dataset — loaded once if available
 _nemotron_ds = None
@@ -213,9 +214,12 @@ async def create_session(entity: EntityInput):
     sessions[sid] = {
         "id": sid,
         "entity_text": entity.entity_text,
+        "goal": "",
+        "audience": "",
         "cohort": None,
         "eval_results": None,
         "gradient": None,
+        "bias_audit": None,
         "created": datetime.now().isoformat(),
     }
     return {"session_id": sid}
@@ -412,7 +416,6 @@ If nothing specific is stated, return {{}}."""
 @app.post("/api/cohort/generate")
 async def generate_cohort_endpoint(config: CohortConfig):
     """Generate a cohort — from Nemotron if available, else LLM-generated."""
-    sid = uuid.uuid4().hex[:12]
     total = sum(s.get("count", 8) for s in config.segments)
 
     ds = get_nemotron()
@@ -465,17 +468,8 @@ async def generate_cohort_endpoint(config: CohortConfig):
     for i, p in enumerate(all_personas):
         p["user_id"] = i
 
-    sessions[sid] = {
-        "id": sid,
-        "entity_text": config.description,
-        "cohort": all_personas,
-        "eval_results": None,
-        "gradient": None,
-        "created": datetime.now().isoformat(),
-    }
-
     return {
-        "session_id": sid, "cohort_size": len(all_personas),
+        "cohort_size": len(all_personas),
         "cohort": all_personas, "source": source,
         "filters": filters if ds is not None else None,
     }
@@ -516,8 +510,6 @@ async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = 
         results = [None] * total
         done = 0
         t0 = time.time()
-        loop = asyncio.get_event_loop()
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
             futs = {
                 pool.submit(evaluate_one, client, model, ev, entity_text,
@@ -526,7 +518,10 @@ async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = 
             }
             for fut in concurrent.futures.as_completed(futs):
                 idx = futs[fut]
-                result = fut.result()
+                try:
+                    result = fut.result()
+                except Exception as e:
+                    result = {"error": str(e), "_evaluator": {"name": "?"}}
                 results[idx] = result
                 done += 1
 
@@ -573,8 +568,8 @@ class CounterfactualRequest(BaseModel):
     parallel: int = 5
 
 
-# Store pending counterfactual configs for SSE pickup
-_cf_pending: dict = {}
+# Store pending counterfactual configs for SSE pickup (with timestamps)
+_cf_pending: dict = {}  # ticket -> {"req": CounterfactualRequest, "ts": time.time()}
 
 
 @app.post("/api/counterfactual/prepare/{sid}")
@@ -583,7 +578,12 @@ async def prepare_counterfactual(sid: str, req: CounterfactualRequest):
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
     ticket = uuid.uuid4().hex[:8]
-    _cf_pending[ticket] = req
+    # Clean expired tickets (>10 min)
+    now = time.time()
+    expired = [k for k, v in _cf_pending.items() if now - v.get("ts", 0) > 600]
+    for k in expired:
+        del _cf_pending[k]
+    _cf_pending[ticket] = {"req": req, "ts": now}
     return {"ticket": ticket}
 
 
@@ -595,9 +595,10 @@ async def counterfactual_stream(sid: str, ticket: str):
     session = sessions[sid]
     if not session["eval_results"]:
         raise HTTPException(400, "Run evaluation first")
-    req = _cf_pending.pop(ticket, None)
-    if not req:
+    entry = _cf_pending.pop(ticket, None)
+    if not entry:
         raise HTTPException(400, "Invalid or expired ticket")
+    req = entry["req"]
 
     all_changes = req.changes
     goal = req.goal
