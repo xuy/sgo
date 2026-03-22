@@ -345,21 +345,23 @@
     </div>
 
     <div class="field">
-      <textarea id="entityText" placeholder="Paste your entity here..."></textarea>
+      <label>Entity — what are you putting out there?</label>
+      <textarea id="entityText" placeholder="Paste your landing page, resume, pitch, profile, policy..."></textarea>
     </div>
 
     <div class="field">
-      <label>What's your goal?</label>
-      <input type="text" id="goalText" placeholder="e.g. 'Get hired at a Series B startup' or 'Close enterprise deals'">
+      <label>Goal — what outcome do you want?</label>
+      <input type="text" id="goalText" placeholder="Will be auto-suggested from your entity">
+    </div>
+
+    <div class="field">
+      <label>Audience — who are you trying to reach?</label>
+      <input type="text" id="cohortDesc" placeholder="Will be auto-suggested from your entity">
     </div>
 
     <details class="mb-8">
       <summary style="cursor:pointer;color:var(--text2);font-size:0.85rem">Advanced options</summary>
       <div style="padding:12px 0">
-        <div class="field">
-          <label>Audience context (optional — auto-detected if blank)</label>
-          <input type="text" id="cohortDesc" placeholder="e.g. 'Would customers buy this product?'">
-        </div>
         <div class="field">
           <label>Panel size</label>
           <input type="number" id="panelSize" value="30" min="5" max="80"
@@ -656,6 +658,30 @@ function logStep(msg, cls = '') {
 
 // ── Step 1: Full pipeline (one click) ──
 
+async function inferSpec() {
+  const text = document.getElementById('entityText').value.trim();
+  if (!text) return;
+
+  const goalField = document.getElementById('goalText');
+  const audienceField = document.getElementById('cohortDesc');
+
+  // Only auto-fill if both are empty
+  if (goalField.value.trim() && audienceField.value.trim()) return;
+
+  try {
+    const resp = await fetch('/api/infer-spec', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entity_text: text}),
+    });
+    const data = await resp.json();
+    if (!goalField.value.trim() && data.goal) goalField.value = data.goal;
+    if (!audienceField.value.trim() && data.audience) audienceField.value = data.audience;
+  } catch (e) {
+    // Silent fail — user can fill in manually
+  }
+}
+
 async function runFullPipeline() {
   const text = document.getElementById('entityText').value.trim();
   if (!text) return alert('Please enter your entity text.');
@@ -669,9 +695,20 @@ async function runFullPipeline() {
   document.getElementById('evalLog').innerHTML = '';
   document.getElementById('pipelineProgressBar').style.width = '5%';
 
+  // Auto-infer goal + audience if not provided
+  const goalField = document.getElementById('goalText');
+  const audienceField = document.getElementById('cohortDesc');
+  if (!goalField.value.trim() || !audienceField.value.trim()) {
+    document.getElementById('pipelineProgressText').textContent = 'Inferring goal and audience from entity...';
+    logStep('Inferring goal and audience from entity...');
+    await inferSpec();
+    if (goalField.value) logStep(`Goal: ${goalField.value}`, 'pos');
+    if (audienceField.value) logStep(`Audience: ${audienceField.value}`, 'pos');
+  }
+
   const biasCal = document.getElementById('biasCalibration').checked;
   const panelSize = parseInt(document.getElementById('panelSize').value) || 30;
-  const audienceCtx = document.getElementById('cohortDesc').value.trim();
+  const audienceCtx = audienceField.value.trim();
 
   try {
     // Phase 1: Create session

@@ -235,6 +235,52 @@ async def get_session(sid: str):
     }
 
 
+class InferSpecInput(BaseModel):
+    entity_text: str
+
+
+@app.post("/api/infer-spec")
+async def infer_spec(input: InferSpecInput):
+    """Infer goal and audience from entity text."""
+    client = get_client()
+    model = get_model()
+
+    prompt = f"""Read this entity and infer two things:
+1. What is the most likely GOAL the author has? (what outcome they want)
+2. Who is the intended AUDIENCE? (who evaluates or decides)
+
+Entity:
+{input.entity_text[:2000]}
+
+Return JSON:
+{{
+    "goal": "<1 sentence — the outcome they're optimizing for>",
+    "audience": "<1 sentence — who should evaluate this, with demographics if obvious>"
+}}
+
+Examples:
+- Product landing page → goal: "Convert visitors to paying customers", audience: "Software developers evaluating dev tools"
+- Resume → goal: "Get interview callbacks from target companies", audience: "Engineering hiring managers at mid-stage startups"
+- Profile → goal: "Attract compatible connections", audience: "Professionals aged 28-40 in the same metro area"
+- Pitch deck → goal: "Secure Series A funding", audience: "VCs and angels focused on B2B SaaS"
+
+Be specific to THIS entity, not generic."""
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=256,
+            temperature=0.5,
+        )
+        content = resp.choices[0].message.content
+        content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+        return json.loads(content)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to infer spec: {e}")
+
+
 @app.post("/api/suggest-changes")
 async def suggest_changes(input: SuggestChangesInput):
     """Generate candidate changes from evaluation concerns and goal."""
