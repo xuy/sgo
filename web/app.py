@@ -38,7 +38,7 @@ from openai import OpenAI
 import sys
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from evaluate import evaluate_one, analyze as analyze_eval, SYSTEM_PROMPT, BIAS_CALIBRATION_ADDENDUM
-from counterfactual import probe_one, analyze_gradient, build_changes_block
+from counterfactual import probe_one, analyze_gradient, build_changes_block, compute_goal_weights
 from generate_cohort import generate_segment
 from bias_audit import (
     reframe_entity, add_authority_signals, reorder_entity,
