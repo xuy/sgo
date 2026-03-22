@@ -980,17 +980,27 @@ async function runDirections() {
 function renderGradientTable(results, changes) {
   const valid = results.filter(r => r && r.counterfactuals);
   const labels = {};
-  changes.forEach(c => { labels[c.id] = c.label; });
+  const descs = {};
+  changes.forEach(c => { labels[c.id] = c.label; descs[c.id] = c.description; });
 
-  // Aggregate
+  // Aggregate with per-evaluator details
   const byChange = {};
   valid.forEach(r => {
+    const ev = r._evaluator || {};
     (r.counterfactuals || []).forEach(cf => {
       const cid = cf.change_id;
-      if (!byChange[cid]) byChange[cid] = {deltas: [], pos: 0, neg: 0};
-      byChange[cid].deltas.push(cf.delta || 0);
-      if ((cf.delta || 0) > 0) byChange[cid].pos++;
-      if ((cf.delta || 0) < 0) byChange[cid].neg++;
+      if (!byChange[cid]) byChange[cid] = {deltas: [], pos: 0, neg: 0, details: []};
+      const delta = cf.delta || 0;
+      byChange[cid].deltas.push(delta);
+      if (delta > 0) byChange[cid].pos++;
+      if (delta < 0) byChange[cid].neg++;
+      byChange[cid].details.push({
+        name: ev.name || '?',
+        age: ev.age || '',
+        occupation: ev.occupation || '',
+        delta: delta,
+        reasoning: cf.reasoning || '',
+      });
     });
   });
 
@@ -998,7 +1008,8 @@ function renderGradientTable(results, changes) {
     const avg = d.deltas.reduce((a, b) => a + b, 0) / d.deltas.length;
     const min = Math.min(...d.deltas);
     const max = Math.max(...d.deltas);
-    return {id: cid, label: labels[cid] || cid, avg, min, max, pos: d.pos, neg: d.neg};
+    d.details.sort((a, b) => b.delta - a.delta);
+    return {id: cid, label: labels[cid] || cid, desc: descs[cid] || '', avg, min, max, pos: d.pos, neg: d.neg, details: d.details};
   });
   ranked.sort((a, b) => b.avg - a.avg);
 
@@ -1008,10 +1019,16 @@ function renderGradientTable(results, changes) {
     const cls = r.avg >= 0 ? 'delta-pos' : 'delta-neg';
     const barWidth = Math.min(Math.abs(r.avg) * 30, 120);
     const barColor = r.avg >= 0 ? 'var(--green)' : 'var(--red)';
+    const rowId = `gradient-detail-${i}`;
+
+    // Summary row (clickable)
     tbody.innerHTML += `
-      <tr>
+      <tr onclick="document.getElementById('${rowId}').classList.toggle('hidden')" style="cursor:pointer">
         <td>${i + 1}</td>
-        <td>${r.label}</td>
+        <td>
+          <div style="font-weight:600">${r.label}</div>
+          <div style="font-size:0.75rem;color:var(--text2);margin-top:2px">${r.desc}</div>
+        </td>
         <td class="${cls}">
           ${r.avg >= 0 ? '+' : ''}${r.avg.toFixed(1)}
           <span class="delta-bar" style="width:${barWidth}px;background:${barColor};margin-left:8px"></span>
@@ -1019,6 +1036,35 @@ function renderGradientTable(results, changes) {
         <td style="color:var(--text2)">${r.min >= 0 ? '+' : ''}${r.min} to +${r.max}</td>
         <td style="color:var(--green)">${r.pos}</td>
         <td style="color:var(--red)">${r.neg}</td>
+      </tr>
+    `;
+
+    // Detail row (hidden by default)
+    const helped = r.details.filter(d => d.delta > 0).slice(0, 5);
+    const hurt = r.details.filter(d => d.delta < 0).slice(0, 3);
+    const neutral = r.details.filter(d => d.delta === 0).length;
+
+    let detailHtml = '<div style="padding:12px 16px;font-size:0.8rem;line-height:1.6">';
+    if (helped.length) {
+      detailHtml += '<div style="color:var(--green);font-weight:600;margin-bottom:4px">Helps:</div>';
+      helped.forEach(d => {
+        detailHtml += `<div style="margin-left:12px;margin-bottom:4px">+${d.delta} <strong>${d.name}</strong> (${d.age}, ${d.occupation}): ${d.reasoning}</div>`;
+      });
+    }
+    if (hurt.length) {
+      detailHtml += '<div style="color:var(--red);font-weight:600;margin-top:8px;margin-bottom:4px">Hurts:</div>';
+      hurt.forEach(d => {
+        detailHtml += `<div style="margin-left:12px;margin-bottom:4px">${d.delta} <strong>${d.name}</strong> (${d.age}, ${d.occupation}): ${d.reasoning}</div>`;
+      });
+    }
+    if (neutral) {
+      detailHtml += `<div style="color:var(--text2);margin-top:8px">${neutral} evaluators unaffected</div>`;
+    }
+    detailHtml += '</div>';
+
+    tbody.innerHTML += `
+      <tr id="${rowId}" class="hidden">
+        <td colspan="6" style="padding:0;background:var(--bg);border-bottom:2px solid var(--border)">${detailHtml}</td>
       </tr>
     `;
   });
