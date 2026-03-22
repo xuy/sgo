@@ -261,7 +261,7 @@ Return JSON:
 Examples:
 - Product landing page → goal: "Convert visitors to paying customers", audience: "Software developers evaluating dev tools"
 - Resume → goal: "Get interview callbacks from target companies", audience: "Engineering hiring managers at mid-stage startups"
-- Profile → goal: "Attract compatible connections", audience: "Professionals aged 28-40 in the same metro area"
+- Professional bio → goal: "Build credibility and attract inbound opportunities", audience: "Industry peers and potential collaborators"
 - Pitch deck → goal: "Secure Series A funding", audience: "VCs and angels focused on B2B SaaS"
 
 Be specific to THIS entity, not generic."""
@@ -387,8 +387,8 @@ Return JSON with ONLY the fields that apply (omit fields that aren't specified):
     "occupation": "<occupation substring>"
 }}
 
-If the audience is "women in Chicago aged 25-35", return:
-{{"sex": "Female", "city": "Chicago", "state": "IL", "age_min": 25, "age_max": 35}}
+If the audience is "engineers in Texas aged 25-40", return:
+{{"state": "TX", "age_min": 25, "age_max": 40, "occupation": "engineer"}}
 
 If nothing specific is stated, return {{}}."""
 
