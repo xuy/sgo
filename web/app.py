@@ -588,7 +588,7 @@ async def prepare_counterfactual(sid: str, req: CounterfactualRequest):
 
 
 @app.get("/api/counterfactual/stream/{sid}")
-async def counterfactual_stream(sid: str, ticket: str, **_):
+async def counterfactual_stream(sid: str, ticket: str):
     """Run counterfactual probes with SSE progress."""
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
