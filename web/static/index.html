@@ -317,24 +317,19 @@
       <div class="step-num" style="border-color:var(--yellow);color:var(--yellow)">!</div>
       <div class="step-title">Connect your LLM</div>
     </div>
-    <p class="step-desc">SGO needs an OpenAI-compatible API key to run evaluations. Your key stays in your browser session.</p>
+    <p class="step-desc">SGO works with any OpenAI-compatible API. Your key stays in your browser session.</p>
     <div class="field">
       <label>API key</label>
       <input type="password" id="apiKeyInput" placeholder="sk-...">
     </div>
-    <details class="mb-8">
-      <summary style="cursor:pointer;color:var(--text2);font-size:0.85rem">Custom endpoint</summary>
-      <div style="padding:8px 0">
-        <div class="field">
-          <label>Base URL (optional)</label>
-          <input type="text" id="apiBaseUrl" placeholder="e.g. https://api.openai.com/v1">
-        </div>
-        <div class="field">
-          <label>Model (optional)</label>
-          <input type="text" id="apiModel" placeholder="e.g. gpt-4o-mini">
-        </div>
-      </div>
-    </details>
+    <div class="field">
+      <label>Base URL</label>
+      <input type="text" id="apiBaseUrl" placeholder="e.g. https://openrouter.ai/api/v1 or https://api.openai.com/v1">
+    </div>
+    <div class="field">
+      <label>Model</label>
+      <input type="text" id="apiModel" placeholder="e.g. gpt-4o-mini or anthropic/claude-sonnet-4" value="openai/gpt-4o-mini">
+    </div>
     <button onclick="saveApiKey()">Connect</button>
   </div>
 
