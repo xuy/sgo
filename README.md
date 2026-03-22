@@ -90,17 +90,19 @@ uv run python scripts/setup_data.py   # Download Nemotron personas (once, ~2GB)
 
 ## How It Works
 
-You describe what you're optimizing. SGO builds a diverse panel of evaluators, has each one react, then probes the undecided ones to find what would tip them.
+You describe what you're optimizing and what your goal is. SGO builds a diverse panel, has each one react, then focuses on the **persuadable middle** — the people who are *almost* convinced — to find what would tip them toward your goal.
+
+SGO does **not** try to please everyone. People who scored 1–3 are not your audience — their feedback is informational, not actionable. The system focuses on moving the people who are close to yes.
 
 **Five steps:**
 
-1. **Describe your entity** — what an evaluator would see (your landing page, resume, pitch, etc.)
+1. **Describe your entity and goal** — what an evaluator would see, and what outcome you're optimizing for
 2. **Build a panel** — 30–80 evaluators, stratified to cover the segments that matter
-3. **Evaluate** — each evaluator scores 1–10 with reasons: what attracted them, what concerned them, any dealbreakers
-4. **Probe the undecided** — for people who scored 4–7, ask: *"if this specific thing changed, what would your new score be?"*
+3. **Evaluate** — each evaluator scores 1–10. Results are segmented: champions (8+), persuadable (4–7), not-for-them (1–3)
+4. **Find directions for your goal** — the persuadable middle re-evaluates hypothetical changes. With a goal, evaluators are weighted by relevance (VJP)
 5. **Act and re-run** — make the top change, re-evaluate against the same panel, track improvement over time
 
-The key insight is step 4. The probe produces a ranked list of changes sorted by how much they'd move the needle — across the whole panel and broken down by segment. SGO calls this the **semantic gradient**.
+The key insight is step 4. The probe produces a ranked list of changes sorted by how much they'd move the persuadable middle toward your goal. SGO calls this the **semantic gradient** — technically a vector-Jacobian product when a goal is specified.
 
 <details>
 <summary>Example: what the gradient looks like</summary>

@@ -144,44 +144,57 @@ def analyze(results):
 
     scores = [r["score"] for r in valid]
     n = len(valid)
-    actions = [r["action"] for r in valid]
+
+    # NPS-style segmentation
+    champions = [r for r in valid if r["score"] >= 8]
+    persuadable = [r for r in valid if 4 <= r["score"] <= 7]
+    not_for_them = [r for r in valid if r["score"] <= 3]
 
     lines = [f"## Summary ({n} evaluated)\n"]
-    lines.append(f"Average score: {sum(scores)/n:.1f}/10")
-    for act in ("positive", "neutral", "negative"):
-        c = actions.count(act)
-        lines.append(f"  {act}: {c} ({100*c//n}%)")
+    lines.append(f"Average score: {sum(scores)/n:.1f}/10\n")
+    lines.append(f"  Champions (8-10):     {len(champions):>3} ({100*len(champions)//n}%)  — already sold")
+    lines.append(f"  Persuadable (4-7):    {len(persuadable):>3} ({100*len(persuadable)//n}%)  — where to focus")
+    lines.append(f"  Not for them (1-3):   {len(not_for_them):>3} ({100*len(not_for_them)//n}%)  — not your audience")
 
-    lines.append("\n### Top Attractions")
-    all_a = [a for r in valid for a in r.get("attractions", [])]
+    # What's working (from champions + high persuadable)
+    strong = [r for r in valid if r["score"] >= 6]
+    lines.append("\n### What's Working")
+    lines.append("*What resonates with people who are already leaning yes:*")
+    all_a = [a for r in strong for a in r.get("attractions", [])]
     for a, c in Counter(all_a).most_common(8):
         lines.append(f"  [{c}x] {a}")
 
-    lines.append("\n### Top Concerns")
-    all_c = [c for r in valid for c in r.get("concerns", [])]
-    for c, cnt in Counter(all_c).most_common(8):
+    # What's holding back the persuadable middle
+    lines.append("\n### What's Holding Back the Persuadable Middle")
+    lines.append("*Concerns from evaluators who scored 4-7 — the ones you can move:*")
+    mid_concerns = [c for r in persuadable for c in r.get("concerns", [])]
+    for c, cnt in Counter(mid_concerns).most_common(8):
         lines.append(f"  [{cnt}x] {c}")
 
-    lines.append("\n### Dealbreakers")
+    # Dealbreakers (across all)
     all_d = [d for r in valid for d in r.get("dealbreakers", [])]
     if all_d:
-        for d, cnt in Counter(all_d).most_common(8):
+        lines.append("\n### Dealbreakers")
+        for d, cnt in Counter(all_d).most_common(5):
             lines.append(f"  [{cnt}x] {d}")
-    else:
-        lines.append("  (none)")
 
+    # Champions
     sorted_v = sorted(valid, key=lambda r: r["score"], reverse=True)
-    lines.append("\n### Most Receptive (top 5)")
+    lines.append("\n### Champions (top 5)")
+    lines.append("*These people are your base — understand why they said yes:*")
     for r in sorted_v[:5]:
         e = r["_evaluator"]
         lines.append(f"  {e['name']}, {e.get('age','')}, {e.get('occupation','')}")
         lines.append(f"    {r['score']}/10 — \"{r.get('summary','')}\"")
 
-    lines.append("\n### Least Receptive (bottom 5)")
-    for r in sorted_v[-5:]:
-        e = r["_evaluator"]
-        lines.append(f"  {e['name']}, {e.get('age','')}, {e.get('occupation','')}")
-        lines.append(f"    {r['score']}/10 — \"{r.get('summary','')}\"")
+    # Not for them — shown for context, not as a problem
+    if not_for_them:
+        lines.append(f"\n### Not For Them ({len(not_for_them)} evaluators)")
+        lines.append("*These evaluators are not your target audience — their feedback is informational, not actionable:*")
+        for r in sorted_v[-3:]:
+            e = r["_evaluator"]
+            lines.append(f"  {e['name']}, {e.get('age','')}, {e.get('occupation','')}")
+            lines.append(f"    {r['score']}/10 — \"{r.get('summary','')}\"")
 
     return "\n".join(lines)
 

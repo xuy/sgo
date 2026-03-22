@@ -224,8 +224,10 @@ def analyze_gradient(results, all_changes, goal_weights=None):
         })
     ranked.sort(key=lambda x: x["avg_delta"], reverse=True)
 
-    mode = "Goal-Weighted (VJP)" if has_goal else "Uniform"
-    lines = [f"# Semantic Gradient ({mode})\n\nProbed {len(valid)} evaluators across {len(all_changes)} changes.\n"]
+    mode = "goal-weighted" if has_goal else "uniform"
+    lines = [f"# Priority Actions ({mode})\n\n"
+             f"Probed {len(valid)} persuadable evaluators (scores 4-7) across {len(all_changes)} changes.\n"
+             f"These are the people who are *almost* convinced — not the ones who were never your audience.\n"]
     if has_goal:
         header = f"{'Rank':<5} {'VJP Δ':>6} {'Raw Δ':>6} {'Max':>5} {'Min':>5}  Change"
     else:
