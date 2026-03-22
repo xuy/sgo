@@ -278,20 +278,25 @@ async def generate_cohort_endpoint(config: CohortConfig):
     ds = get_nemotron()
     if ds is not None:
         # Use census-grounded Nemotron personas
+        import random
         pl = _lazy_persona_loader()
         ss = _lazy_stratified_sampler()
         filtered = pl.filter_personas(ds, {}, limit=max(total * 20, 2000))
         profiles = [pl.to_profile(row, i) for i, row in enumerate(filtered)]
 
+        # Use only age + education to keep strata count < total
         dim_fns = [
             lambda p: ss.age_bracket(p.get("age", 30)),
-            lambda p: p.get("marital_status", "unknown"),
             lambda p: p.get("education_level", "") or "unknown",
         ]
         diversity_fn = lambda p: p.get("occupation", "unknown") or "unknown"
 
         all_personas = ss.stratified_sample(profiles, dim_fns, total=total,
                                             diversity_fn=diversity_fn)
+        # Hard cap — stratified_sample can exceed total when strata > total
+        if len(all_personas) > total:
+            random.seed(42)
+            all_personas = random.sample(all_personas, total)
         source = "nemotron"
     else:
         # Fallback: LLM-generated
