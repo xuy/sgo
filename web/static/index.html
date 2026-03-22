@@ -739,6 +739,9 @@ async function runFullPipeline() {
 
     const src = cohortData.source === 'nemotron' ? 'census-grounded (Nemotron)' : 'LLM-generated';
     logStep(`${cohortData.cohort_size} evaluators ready — ${src}`, 'pos');
+    if (panelSize < 40) {
+      logStep(`Tip: a panel of 40-60 gives more reliable results across segments`, 'neu');
+    }
     document.getElementById('pipelineProgressBar').style.width = '35%';
 
     // Phase 4: Evaluate via SSE
