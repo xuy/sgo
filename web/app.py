@@ -173,6 +173,12 @@ async def get_config():
     }
 
 
+class SuggestChangesInput(BaseModel):
+    entity_text: str
+    goal: str
+    concerns: list[str]
+
+
 class NemotronPathInput(BaseModel):
     path: str
 
@@ -226,6 +232,49 @@ async def get_session(sid: str):
         "has_eval": s["eval_results"] is not None,
         "has_gradient": s["gradient"] is not None,
     }
+
+
+@app.post("/api/suggest-changes")
+async def suggest_changes(input: SuggestChangesInput):
+    """Generate candidate changes from evaluation concerns and goal."""
+    client = get_client()
+    model = get_model()
+
+    concerns_text = "\n".join(f"- {c}" for c in input.concerns[:15])
+    prompt = f"""Based on these evaluation results, suggest 3-5 specific, actionable changes.
+
+Entity (first 1000 chars):
+{input.entity_text[:1000]}
+
+Goal: {input.goal or 'Improve overall reception'}
+
+Top concerns from the persuadable middle (people who scored 4-7):
+{concerns_text}
+
+For each change, suggest something that directly addresses one or more concerns.
+Only suggest changes the entity owner could realistically make.
+Do NOT suggest changes that would fundamentally alter the entity's identity.
+
+Return JSON:
+{{
+    "changes": [
+        {{"id": "change_1", "label": "<short label>", "description": "<what specifically changes, 1-2 sentences>"}}
+    ]
+}}"""
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=1024,
+            temperature=0.7,
+        )
+        content = resp.choices[0].message.content
+        content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+        return json.loads(content)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to suggest changes: {e}")
 
 
 @app.post("/api/suggest-segments")

@@ -392,37 +392,22 @@
         <div class="results-details" id="evalAnalysis"></div>
       </details>
       <div class="btn-row mt-16">
-        <button onclick="goToStep(2)">Directions for your goal</button>
+        <button onclick="runDirections()">Directions for your goal</button>
         <button class="secondary" onclick="goToStep(3)">Run bias audit</button>
       </div>
     </div>
   </div>
 
-  <!-- STEP 2: Counterfactual -->
+  <!-- STEP 2: Directions -->
   <div class="step hidden" id="step2">
     <div class="step-header">
       <div class="step-num">2</div>
       <div class="step-title">Directions for your goal</div>
     </div>
-    <p class="step-desc">What changes would move the persuadable middle (scores 4-7) closer to yes? Only the people who are <em>almost</em> convinced are consulted — not the ones who were never your audience.</p>
+    <p class="step-desc">Testing changes against the persuadable middle — the people who are <em>almost</em> convinced.</p>
 
-    <div id="changesList"></div>
-    <div class="btn-row mb-8">
-      <button class="secondary" onclick="addChange()">+ Add change</button>
-    </div>
-    <div class="btn-row">
-      <button onclick="runCounterfactual()" id="cfBtn">Compute gradient</button>
-      <div style="flex:1"></div>
-      <label style="display:flex;align-items:center;gap:6px;margin:0">
-        <span style="font-size:0.8rem;color:var(--text2)">Score range:</span>
-        <input type="number" id="cfMin" value="4" min="1" max="10" style="width:50px;padding:6px;text-align:center">
-        <span style="color:var(--text2)">-</span>
-        <input type="number" id="cfMax" value="7" min="1" max="10" style="width:50px;padding:6px;text-align:center">
-      </label>
-    </div>
-
-    <div id="cfProgress" class="hidden mt-16">
-      <div class="progress-text" id="cfProgressText">Probing...</div>
+    <div id="cfProgress" class="mt-16">
+      <div class="progress-text" id="cfProgressText">Analyzing concerns...</div>
       <div class="progress-bar"><div class="progress-fill" id="cfProgressBar"></div></div>
       <div class="eval-log" id="cfLog"></div>
     </div>
@@ -436,8 +421,12 @@
         <tbody></tbody>
       </table>
       <details class="mt-12">
-        <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full gradient output</summary>
+        <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full output</summary>
         <div class="results-details" id="gradientText"></div>
+      </details>
+      <details class="mt-12">
+        <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Changes tested</summary>
+        <div class="results-details" id="changesTested"></div>
       </details>
     </div>
   </div>
@@ -594,8 +583,7 @@ async function init() {
     document.getElementById('nemotronPath').value = cfg.base_url ? '' : 'data/nemotron';
   }
 
-  addChange('', '');
-  addChange('', '');
+  // Changes are auto-generated from evaluation concerns
 }
 
 async function setupNemotron() {
@@ -812,120 +800,121 @@ function rerunWithCalibration() {
   runFullPipeline();
 }
 
-// ── Step 4: Counterfactual ──
+// ── Step 2: Directions (auto-flow) ──
 
-let changeCounter = 0;
+let suggestedChanges = [];
 
-function addChange(label = '', description = '') {
-  changeCounter++;
-  const list = document.getElementById('changesList');
-  const card = document.createElement('div');
-  card.className = 'change-card';
-  card.dataset.id = `change_${changeCounter}`;
-  card.innerHTML = `
-    <div class="change-header">
-      <span>Change ${changeCounter}</span>
-      <button class="secondary" style="padding:4px 10px;font-size:0.8rem" onclick="this.closest('.change-card').remove()">Remove</button>
-    </div>
-    <div class="field">
-      <label>Label</label>
-      <input type="text" class="change-label" placeholder="e.g. Add free tier" value="${label}">
-    </div>
-    <div class="field">
-      <label>Description</label>
-      <textarea class="change-desc" placeholder="What specifically changes? Be detailed.">${description}</textarea>
-    </div>
-  `;
-  list.appendChild(card);
-}
+async function runDirections() {
+  if (!sessionId || !evalResultsData) return alert('Run evaluation first.');
 
-function getChanges() {
-  const cards = document.querySelectorAll('.change-card');
-  const changes = [];
-  cards.forEach(card => {
-    const label = card.querySelector('.change-label').value.trim();
-    const desc = card.querySelector('.change-desc').value.trim();
-    if (label && desc) {
-      changes.push({id: card.dataset.id, label, description: desc});
-    }
-  });
-  return changes;
-}
-
-function runCounterfactual() {
-  const changes = getChanges();
-  if (changes.length === 0) return alert('Add at least one change.');
-  if (!sessionId) return alert('No session.');
-
-  const minScore = parseInt(document.getElementById('cfMin').value) || 4;
-  const maxScore = parseInt(document.getElementById('cfMax').value) || 7;
-  const btn = document.getElementById('cfBtn');
-  btn.disabled = true;
-
-  document.getElementById('cfProgress').classList.remove('hidden');
+  goToStep(2);
   document.getElementById('cfResults').classList.add('hidden');
   document.getElementById('cfLog').innerHTML = '';
+  document.getElementById('cfProgressBar').style.width = '5%';
 
+  const entityText = document.getElementById('entityText').value.trim();
   const goal = document.getElementById('goalText').value.trim();
-  const params = new URLSearchParams({
-    changes_json: JSON.stringify(changes),
-    goal: goal,
-    min_score: minScore,
-    max_score: maxScore,
-    parallel: 5,
-  });
 
-  const es = new EventSource(`/api/counterfactual/stream/${sessionId}?${params}`);
-
-  es.addEventListener('start', (e) => {
-    const d = JSON.parse(e.data);
-    const goalLabel = d.goal ? ` toward "${d.goal}"` : '';
-    document.getElementById('cfProgressText').textContent =
-      `Probing ${d.total} evaluators across ${d.changes} changes${goalLabel}...`;
-  });
-
-  es.addEventListener('goal_weights', (e) => {
-    const d = JSON.parse(e.data);
-    document.getElementById('cfProgressText').textContent = d.message;
-  });
-
-  es.addEventListener('progress', (e) => {
-    const d = JSON.parse(e.data);
-    const pct = Math.round(d.done / d.total * 100);
-    document.getElementById('cfProgressBar').style.width = pct + '%';
-    document.getElementById('cfProgressText').textContent = `${d.done}/${d.total} probed`;
+  try {
+    // Phase 1: Extract concerns from persuadable middle
+    document.getElementById('cfProgressText').textContent = 'Analyzing concerns from persuadable middle...';
+    const persuadable = evalResultsData.filter(r => r && r.score >= 4 && r.score <= 7);
+    const concerns = [];
+    persuadable.forEach(r => {
+      (r.concerns || []).forEach(c => {
+        if (!concerns.includes(c)) concerns.push(c);
+      });
+    });
 
     const log = document.getElementById('cfLog');
-    const delta = d.best_delta > 0 ? `+${d.best_delta}` : d.best_delta;
-    log.innerHTML += `<div>${d.name} (orig ${d.original_score}): best ${delta} from "${d.best_change}"</div>`;
+    concerns.slice(0, 8).forEach(c => {
+      log.innerHTML += `<div style="color:var(--text2)">Concern: ${c}</div>`;
+    });
+    log.innerHTML += `<div>${concerns.length} unique concerns from ${persuadable.length} persuadable evaluators</div>`;
+    document.getElementById('cfProgressBar').style.width = '15%';
+
+    // Phase 2: LLM generates candidate changes from concerns
+    document.getElementById('cfProgressText').textContent = 'Generating candidate changes from concerns...';
+    const suggestResp = await fetch('/api/suggest-changes', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entity_text: entityText, goal, concerns}),
+    });
+    const suggestData = await suggestResp.json();
+    suggestedChanges = suggestData.changes || [];
+
+    suggestedChanges.forEach(c => {
+      log.innerHTML += `<div class="pos">Change: ${c.label} — ${c.description}</div>`;
+    });
     log.scrollTop = log.scrollHeight;
-  });
+    document.getElementById('cfProgressBar').style.width = '25%';
 
-  es.addEventListener('complete', (e) => {
-    es.close();
-    const d = JSON.parse(e.data);
+    // Phase 3: Run counterfactual probes
+    document.getElementById('cfProgressText').textContent = 'Testing changes against persuadable middle...';
 
-    document.getElementById('cfProgressBar').style.width = '100%';
-    document.getElementById('cfProgressText').textContent = d.elapsed ? `Done in ${d.elapsed}s` : 'Done';
+    const params = new URLSearchParams({
+      changes_json: JSON.stringify(suggestedChanges),
+      goal: goal,
+      min_score: 4,
+      max_score: 7,
+      parallel: 5,
+    });
 
-    if (d.error) {
-      document.getElementById('cfProgressText').textContent = d.error;
-      btn.disabled = false;
-      return;
-    }
+    await new Promise((resolve, reject) => {
+      const es = new EventSource(`/api/counterfactual/stream/${sessionId}?${params}`);
 
-    // Parse gradient into table
-    renderGradientTable(d.results, changes);
-    document.getElementById('gradientText').textContent = d.gradient;
-    document.getElementById('cfResults').classList.remove('hidden');
-    btn.disabled = false;
-  });
+      es.addEventListener('start', (e) => {
+        const d = JSON.parse(e.data);
+        const goalLabel = d.goal ? ` toward "${d.goal}"` : '';
+        document.getElementById('cfProgressText').textContent =
+          `Probing ${d.total} evaluators across ${d.changes} changes${goalLabel}...`;
+      });
 
-  es.onerror = () => {
-    es.close();
-    document.getElementById('cfProgressText').textContent = 'Connection lost';
-    btn.disabled = false;
-  };
+      es.addEventListener('goal_weights', (e) => {
+        const d = JSON.parse(e.data);
+        document.getElementById('cfProgressText').textContent = d.message;
+        log.innerHTML += `<div>${d.message}</div>`;
+        log.scrollTop = log.scrollHeight;
+      });
+
+      es.addEventListener('progress', (e) => {
+        const d = JSON.parse(e.data);
+        const pct = 25 + Math.round(d.done / d.total * 75);
+        document.getElementById('cfProgressBar').style.width = pct + '%';
+        document.getElementById('cfProgressText').textContent = `${d.done}/${d.total} probed`;
+
+        const delta = d.best_delta > 0 ? `+${d.best_delta}` : d.best_delta;
+        log.innerHTML += `<div>${d.name} (orig ${d.original_score}): best ${delta} from "${d.best_change}"</div>`;
+        log.scrollTop = log.scrollHeight;
+      });
+
+      es.addEventListener('complete', (e) => {
+        es.close();
+        const d = JSON.parse(e.data);
+
+        document.getElementById('cfProgressBar').style.width = '100%';
+        document.getElementById('cfProgressText').textContent = d.elapsed ? `Done in ${d.elapsed}s` : 'Done';
+
+        if (d.error) {
+          document.getElementById('cfProgressText').textContent = d.error;
+          reject(new Error(d.error));
+          return;
+        }
+
+        renderGradientTable(d.results, suggestedChanges);
+        document.getElementById('gradientText').textContent = d.gradient;
+        document.getElementById('changesTested').textContent =
+          suggestedChanges.map(c => `${c.label}: ${c.description}`).join('\n');
+        document.getElementById('cfResults').classList.remove('hidden');
+        resolve();
+      });
+
+      es.onerror = () => { es.close(); reject(new Error('Connection lost')); };
+    });
+
+  } catch (e) {
+    document.getElementById('cfProgressText').textContent = `Error: ${e.message}`;
+  }
 }
 
 function renderGradientTable(results, changes) {
