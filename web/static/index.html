@@ -348,6 +348,11 @@
       <textarea id="entityText" placeholder="Paste your entity here..."></textarea>
     </div>
 
+    <div class="field">
+      <label>What's your goal?</label>
+      <input type="text" id="goalText" placeholder="e.g. 'Get hired at a Series B startup' or 'Close enterprise deals'">
+    </div>
+
     <details class="mb-8">
       <summary style="cursor:pointer;color:var(--text2);font-size:0.85rem">Advanced options</summary>
       <div style="padding:12px 0">
@@ -861,8 +866,10 @@ function runCounterfactual() {
   document.getElementById('cfResults').classList.add('hidden');
   document.getElementById('cfLog').innerHTML = '';
 
+  const goal = document.getElementById('goalText').value.trim();
   const params = new URLSearchParams({
     changes_json: JSON.stringify(changes),
+    goal: goal,
     min_score: minScore,
     max_score: maxScore,
     parallel: 5,
@@ -872,8 +879,14 @@ function runCounterfactual() {
 
   es.addEventListener('start', (e) => {
     const d = JSON.parse(e.data);
+    const goalLabel = d.goal ? ` toward "${d.goal}"` : '';
     document.getElementById('cfProgressText').textContent =
-      `Probing ${d.total} evaluators across ${d.changes} changes...`;
+      `Probing ${d.total} evaluators across ${d.changes} changes${goalLabel}...`;
+  });
+
+  es.addEventListener('goal_weights', (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById('cfProgressText').textContent = d.message;
   });
 
   es.addEventListener('progress', (e) => {

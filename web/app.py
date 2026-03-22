@@ -419,10 +419,10 @@ async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = 
 
 @app.get("/api/counterfactual/stream/{sid}")
 async def counterfactual_stream(
-    sid: str, changes_json: str, min_score: int = 4,
-    max_score: int = 7, parallel: int = 5
+    sid: str, changes_json: str, goal: str = "",
+    min_score: int = 4, max_score: int = 7, parallel: int = 5
 ):
-    """Run counterfactual probes with SSE progress."""
+    """Run counterfactual probes with SSE progress. Goal enables VJP weighting."""
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
     session = sessions[sid]
@@ -442,8 +442,10 @@ async def counterfactual_stream(
                    if "score" in r and min_score <= r["score"] <= max_score]
 
         total = len(movable)
+        has_goal = bool(goal.strip())
         yield {"event": "start", "data": json.dumps({
-            "total": total, "changes": len(all_changes), "model": model
+            "total": total, "changes": len(all_changes), "model": model,
+            "goal": goal if has_goal else None,
         })}
 
         if total == 0:
@@ -453,6 +455,23 @@ async def counterfactual_stream(
                 "results": [],
             })}
             return
+
+        # Compute goal-relevance weights (VJP) if goal is set
+        goal_weights = None
+        if has_goal:
+            yield {"event": "goal_weights", "data": json.dumps({
+                "status": "computing", "message": "Scoring evaluator relevance to goal..."
+            })}
+            goal_weights = compute_goal_weights(
+                client, model, eval_results, cohort_map, goal, parallel=parallel,
+            )
+            relevant = sum(1 for v in goal_weights.values() if v["weight"] >= 0.5)
+            yield {"event": "goal_weights", "data": json.dumps({
+                "status": "done",
+                "relevant": relevant,
+                "total": len(goal_weights),
+                "message": f"{relevant}/{len(goal_weights)} evaluators relevant to goal",
+            })}
 
         results = [None] * total
         done = 0
@@ -484,13 +503,15 @@ async def counterfactual_stream(
                 yield {"event": "progress", "data": json.dumps(progress)}
 
         elapsed = time.time() - t0
-        gradient_text = analyze_gradient(results, all_changes)
+        gradient_text = analyze_gradient(results, all_changes,
+                                         goal_weights=goal_weights)
         session["gradient"] = gradient_text
 
         yield {"event": "complete", "data": json.dumps({
             "elapsed": round(elapsed, 1),
             "gradient": gradient_text,
             "results": results,
+            "goal": goal if has_goal else None,
         })}
 
     return EventSourceResponse(event_generator())

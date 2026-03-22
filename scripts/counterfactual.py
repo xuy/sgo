@@ -128,29 +128,94 @@ def probe_one(client, model, eval_result, cohort_map, all_changes):
         return {"error": str(e), "_evaluator": ev}
 
 
-def analyze_gradient(results, all_changes):
+GOAL_RELEVANCE_PROMPT = """You are scoring how relevant an evaluator is to a specific goal.
+
+## Goal
+{goal}
+
+## Evaluator
+Name: {name}, Age: {age}, Occupation: {occupation}
+Their evaluation: {score}/10 — "{summary}"
+
+## Task
+On a scale of 0.0 to 1.0, how relevant is this evaluator's opinion to the stated goal?
+- 1.0 = this is exactly the kind of person whose opinion matters for this goal
+- 0.5 = somewhat relevant
+- 0.0 = completely irrelevant to this goal
+
+Return JSON only: {{"relevance": <0.0-1.0>, "reasoning": "<1 sentence>"}}"""
+
+
+def compute_goal_weights(client, model, eval_results, cohort_map, goal, parallel=5):
+    """Score each evaluator's relevance to the goal. Returns {name: weight}."""
+    weights = {}
+
+    def score_one(r):
+        ev = r.get("_evaluator", {})
+        name = ev.get("name", "")
+        persona = cohort_map.get(name, {})
+        prompt = GOAL_RELEVANCE_PROMPT.format(
+            goal=goal, name=name, age=ev.get("age", ""),
+            occupation=ev.get("occupation", ""),
+            score=r.get("score", "?"),
+            summary=r.get("summary", r.get("reasoning", "")),
+        )
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                max_tokens=256, temperature=0.3,
+            )
+            content = resp.choices[0].message.content
+            content = re.sub(r'<think>[\s\S]*?</think>', '', content).strip()
+            data = json.loads(content)
+            return name, float(data.get("relevance", 0.5)), data.get("reasoning", "")
+        except Exception:
+            return name, 0.5, "default"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
+        futs = [pool.submit(score_one, r) for r in eval_results]
+        for fut in concurrent.futures.as_completed(futs):
+            name, weight, reasoning = fut.result()
+            weights[name] = {"weight": weight, "reasoning": reasoning}
+
+    return weights
+
+
+def analyze_gradient(results, all_changes, goal_weights=None):
     valid = [r for r in results if "counterfactuals" in r]
     if not valid:
         return "No valid results."
 
+    has_goal = goal_weights is not None
     labels = {c["id"]: c["label"] for c in all_changes}
     jacobian = defaultdict(list)
 
     for r in valid:
+        name = r["_evaluator"].get("name", "")
+        w = goal_weights.get(name, {}).get("weight", 1.0) if has_goal else 1.0
         for cf in r.get("counterfactuals", []):
             jacobian[cf.get("change_id", "")].append({
                 "delta": cf.get("delta", 0),
-                "name": r["_evaluator"].get("name", ""),
+                "weighted_delta": cf.get("delta", 0) * w,
+                "weight": w,
+                "name": name,
                 "age": r["_evaluator"].get("age", ""),
                 "reasoning": cf.get("reasoning", ""),
             })
 
     ranked = []
     for cid, deltas in jacobian.items():
-        avg = sum(d["delta"] for d in deltas) / len(deltas)
+        total_weight = sum(d["weight"] for d in deltas)
+        if total_weight == 0:
+            total_weight = 1
+        weighted_avg = sum(d["weighted_delta"] for d in deltas) / total_weight
+        raw_avg = sum(d["delta"] for d in deltas) / len(deltas)
         ranked.append({
             "id": cid, "label": labels.get(cid, cid),
-            "avg_delta": avg,
+            "avg_delta": weighted_avg,
+            "raw_avg_delta": raw_avg,
             "max_delta": max(d["delta"] for d in deltas),
             "min_delta": min(d["delta"] for d in deltas),
             "positive": sum(1 for d in deltas if d["delta"] > 0),
@@ -159,29 +224,46 @@ def analyze_gradient(results, all_changes):
         })
     ranked.sort(key=lambda x: x["avg_delta"], reverse=True)
 
-    lines = [f"# Semantic Gradient\n\nProbed {len(valid)} evaluators across {len(all_changes)} changes.\n"]
-    lines.append(f"{'Rank':<5} {'Avg Δ':>6} {'Max':>5} {'Min':>5} {'👍':>4} {'👎':>4}  Change")
+    mode = "Goal-Weighted (VJP)" if has_goal else "Uniform"
+    lines = [f"# Semantic Gradient ({mode})\n\nProbed {len(valid)} evaluators across {len(all_changes)} changes.\n"]
+    if has_goal:
+        header = f"{'Rank':<5} {'VJP Δ':>6} {'Raw Δ':>6} {'Max':>5} {'Min':>5}  Change"
+    else:
+        header = f"{'Rank':<5} {'Avg Δ':>6} {'Max':>5} {'Min':>5} {'👍':>4} {'👎':>4}  Change"
+    lines.append(header)
     lines.append("-" * 75)
     for i, r in enumerate(ranked, 1):
-        lines.append(
-            f"{i:<5} {r['avg_delta']:>+5.1f}  {r['max_delta']:>+4}  {r['min_delta']:>+4}  "
-            f"{r['positive']:>3}  {r['negative']:>3}   {r['label']}"
-        )
+        if has_goal:
+            lines.append(
+                f"{i:<5} {r['avg_delta']:>+5.1f}  {r['raw_avg_delta']:>+5.1f}  "
+                f"{r['max_delta']:>+4}  {r['min_delta']:>+4}   {r['label']}"
+            )
+        else:
+            lines.append(
+                f"{i:<5} {r['avg_delta']:>+5.1f}  {r['max_delta']:>+4}  {r['min_delta']:>+4}  "
+                f"{r['positive']:>3}  {r['negative']:>3}   {r['label']}"
+            )
 
     lines.append(f"\n## Top 3 — Detail\n")
     for r in ranked[:3]:
-        lines.append(f"### {r['label']} (avg Δ {r['avg_delta']:+.1f})\n")
+        label = f"### {r['label']} (Δ {r['avg_delta']:+.1f})"
+        if has_goal and abs(r['avg_delta'] - r['raw_avg_delta']) > 0.2:
+            label += f"  ← was {r['raw_avg_delta']:+.1f} without goal weighting"
+        lines.append(label + "\n")
         positive = sorted([d for d in r["details"] if d["delta"] > 0],
-                          key=lambda x: x["delta"], reverse=True)
+                          key=lambda x: x["weighted_delta"] if has_goal else x["delta"],
+                          reverse=True)
         if positive:
             lines.append("**Helps:**")
             for d in positive[:5]:
-                lines.append(f"  +{d['delta']} {d['name']} ({d['age']}): {d['reasoning']}")
+                w_label = f" [w={d['weight']:.1f}]" if has_goal else ""
+                lines.append(f"  +{d['delta']} {d['name']} ({d['age']}){w_label}: {d['reasoning']}")
         negative = [d for d in r["details"] if d["delta"] < 0]
         if negative:
             lines.append("**Hurts:**")
             for d in sorted(negative, key=lambda x: x["delta"])[:3]:
-                lines.append(f"  {d['delta']} {d['name']} ({d['age']}): {d['reasoning']}")
+                w_label = f" [w={d['weight']:.1f}]" if has_goal else ""
+                lines.append(f"  {d['delta']} {d['name']} ({d['age']}){w_label}: {d['reasoning']}")
         lines.append("")
 
     return "\n".join(lines)
@@ -191,6 +273,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--tag", required=True)
     parser.add_argument("--changes", required=True, help="JSON file with changes to probe")
+    parser.add_argument("--goal", default=None,
+                        help="Goal to optimize toward (enables VJP weighting)")
     parser.add_argument("--min-score", type=int, default=4)
     parser.add_argument("--max-score", type=int, default=7)
     parser.add_argument("--parallel", type=int, default=5)
@@ -223,7 +307,11 @@ def main():
     model = os.getenv("LLM_MODEL_NAME")
 
     print(f"Movable middle (score {args.min_score}-{args.max_score}): {len(movable)}")
-    print(f"Changes: {len(all_changes)} | Model: {model}\n")
+    print(f"Changes: {len(all_changes)} | Model: {model}")
+    if args.goal:
+        print(f"Goal: {args.goal} (VJP mode)\n")
+    else:
+        print("No goal — uniform weighting\n")
 
     results = [None] * len(movable)
     done = [0]
@@ -255,7 +343,18 @@ def main():
     with open(out_dir / "raw_probes.json", "w") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    gradient = analyze_gradient(results, all_changes)
+    # Compute goal weights if goal is specified (VJP)
+    goal_weights = None
+    if args.goal:
+        print("Computing goal-relevance weights...")
+        goal_weights = compute_goal_weights(
+            client, model, eval_results, cohort_map, args.goal,
+            parallel=args.parallel,
+        )
+        relevant = sum(1 for v in goal_weights.values() if v["weight"] >= 0.5)
+        print(f"  {relevant}/{len(goal_weights)} evaluators relevant to goal\n")
+
+    gradient = analyze_gradient(results, all_changes, goal_weights=goal_weights)
     with open(out_dir / "gradient.md", "w") as f:
         f.write(gradient)
 

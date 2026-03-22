@@ -261,17 +261,23 @@ The gap between SGO and real expert panels has three components:
 
 ## The Semantic Gradient
 
-For evaluators in the "movable middle" (scores 4–7), SGO asks: *"if this changed, what's your new score?"*
-
-This produces a Jacobian matrix where each cell is a score delta:
+SGO computes a Jacobian matrix of score deltas — how each evaluator's score would shift for each hypothetical change:
 
 $$J_{ij} = f(\theta + \Delta_j, \; x_i) - f(\theta, \; x_i)$$
 
-The semantic gradient is the column mean — the average impact of each change across the panel:
+### Goal-weighted gradient (VJP)
 
-$$\nabla_j = \frac{1}{n}\sum_{i} J_{ij}$$
+The key insight: not all evaluators matter equally. A luxury brand shouldn't optimize for budget shoppers. A dating profile shouldn't optimize for incompatible matches.
 
-Rank by this value descending: that's your priority list.
+SGO uses a **goal vector** `v` that weights each evaluator by their relevance to your objective. The gradient is a vector-Jacobian product:
+
+$$\nabla_j = \sum_{i} v_i \cdot J_{ij}$$
+
+Where `v_i` is the goal-relevance weight for evaluator `i` (0 = irrelevant, 1 = ideal target).
+
+Without a goal, `v = [1/n, ...]` — uniform weights, optimizing for universal appeal. With a goal like *"close enterprise deals"*, enterprise CTOs get `v ≈ 1` and solo hobbyists get `v ≈ 0`.
+
+The LLM assigns goal-relevance weights automatically by evaluating each persona against your stated objective. This means the gradient tells you *"what changes move you toward your goal"*, not *"what changes make everyone like you more"*.
 
 ### What to probe
 
@@ -290,10 +296,12 @@ Only probe changes you'd actually make:
 |--------|---------|
 | θ | Entity you control |
 | x | Evaluator persona |
+| g | Goal — what you're optimizing for |
 | f(θ, x) | LLM evaluation → score + reasoning |
+| v_i | Goal-relevance weight for evaluator *i* |
 | Δⱼ | Hypothetical change |
 | Jᵢⱼ | Score delta: evaluator *i*, change *j* |
-| ∇ⱼ | Semantic gradient: mean impact of change *j* |
+| ∇ⱼ | Goal-weighted gradient (VJP): impact of change *j* toward goal *g* |
 
 ## Project Structure
 
