@@ -113,15 +113,32 @@ def get_nemotron(data_dir=None):
     return None
 
 
-def get_client():
-    return OpenAI(
-        api_key=os.getenv("LLM_API_KEY"),
-        base_url=os.getenv("LLM_BASE_URL"),
-    )
+# Per-user API key override (for hosted/Spaces mode)
+_user_llm_config: dict = {}  # session-scoped, not persistent
+
+
+def get_client(api_key_override=None):
+    key = api_key_override or _user_llm_config.get("api_key") or os.getenv("LLM_API_KEY")
+    base = _user_llm_config.get("base_url") or os.getenv("LLM_BASE_URL")
+    if not key:
+        raise HTTPException(400, "No API key configured. Enter your key above.")
+    return OpenAI(api_key=key, base_url=base)
 
 
 def get_model():
-    return os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
+    return _user_llm_config.get("model") or os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
+
+
+IS_SPACES = bool(os.getenv("SPACE_ID"))
+
+NEMOTRON_DATASETS = {
+    "USA": "nvidia/Nemotron-Personas-USA",
+    "Japan": "nvidia/Nemotron-Personas-Japan",
+    "India": "nvidia/Nemotron-Personas-India",
+    "Singapore": "nvidia/Nemotron-Personas-Singapore",
+    "Brazil": "nvidia/Nemotron-Personas-Brazil",
+    "France": "nvidia/Nemotron-Personas-France",
+}
 
 
 # ── Models ────────────────────────────────────────────────────────────────
@@ -162,17 +179,37 @@ async def index():
     return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 
+class SetApiKeyInput(BaseModel):
+    api_key: str
+    base_url: str = ""
+    model: str = ""
+
+
 @app.get("/api/config")
 async def get_config():
     """Return current LLM config and Nemotron status."""
     nem_path = find_nemotron_path()
+    has_key = bool(_user_llm_config.get("api_key") or os.getenv("LLM_API_KEY"))
     return {
         "model": get_model(),
-        "has_api_key": bool(os.getenv("LLM_API_KEY")),
-        "base_url": os.getenv("LLM_BASE_URL", ""),
+        "has_api_key": has_key,
+        "base_url": _user_llm_config.get("base_url") or os.getenv("LLM_BASE_URL", ""),
         "nemotron_path": str(nem_path) if nem_path else None,
         "nemotron_available": nem_path is not None,
+        "is_spaces": IS_SPACES,
+        "persona_datasets": list(NEMOTRON_DATASETS.keys()),
     }
+
+
+@app.post("/api/config/api-key")
+async def set_api_key(input: SetApiKeyInput):
+    """Set LLM API key from the UI (for hosted/Spaces mode)."""
+    _user_llm_config["api_key"] = input.api_key
+    if input.base_url:
+        _user_llm_config["base_url"] = input.base_url
+    if input.model:
+        _user_llm_config["model"] = input.model
+    return {"ok": True, "model": get_model()}
 
 
 class SuggestChangesInput(BaseModel):
@@ -182,27 +219,31 @@ class SuggestChangesInput(BaseModel):
 
 
 class NemotronPathInput(BaseModel):
-    path: str
+    path: str = "data/nemotron"
+    dataset: str = "USA"
 
 
 @app.post("/api/nemotron/setup")
 async def setup_nemotron(input: NemotronPathInput):
-    """Point to existing Nemotron data, or download it to the given path."""
+    """Point to existing data, or download a Nemotron dataset to the given path."""
     p = Path(input.path).expanduser().resolve()
+    hf_name = NEMOTRON_DATASETS.get(input.dataset, NEMOTRON_DATASETS["USA"])
 
     if (p / "dataset_info.json").exists():
-        # Already there — just load it
         ds = get_nemotron(data_dir=str(p))
         if ds is None:
             raise HTTPException(500, "Failed to load dataset")
-        return {"status": "loaded", "path": str(p), "count": len(ds)}
+        return {"status": "loaded", "path": str(p), "count": len(ds), "dataset": input.dataset}
 
-    # Not there — download to this path
-    from setup_data import setup
+    # Download from HuggingFace
     try:
-        ds = setup(data_dir=p)
+        from datasets import load_dataset
+        print(f"Downloading {hf_name} ...")
+        ds = load_dataset(hf_name, split="train")
+        p.mkdir(parents=True, exist_ok=True)
+        ds.save_to_disk(str(p))
         get_nemotron(data_dir=str(p))
-        return {"status": "downloaded", "path": str(p), "count": len(ds)}
+        return {"status": "downloaded", "path": str(p), "count": len(ds), "dataset": input.dataset}
     except Exception as e:
         raise HTTPException(500, f"Download failed: {e}")
 
@@ -834,6 +875,8 @@ async def restore_sessions():
 
 if __name__ == "__main__":
     import uvicorn
+    port = int(os.getenv("PORT", "7860" if IS_SPACES else "8000"))
+    host = "0.0.0.0" if IS_SPACES else "127.0.0.1"
     print(f"\n  SGO Web Interface")
-    print(f"  http://localhost:8000\n")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    print(f"  http://{host}:{port}\n")
+    uvicorn.run(app, host=host, port=port)

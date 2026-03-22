@@ -311,19 +311,59 @@
     <div id="nemotronBadge" class="config-badge" style="margin-left:8px">checking...</div>
   </header>
 
+  <!-- API Key setup (shown if no key configured) -->
+  <div class="step hidden" id="apiKeySetup" style="border-color:var(--yellow)">
+    <div class="step-header">
+      <div class="step-num" style="border-color:var(--yellow);color:var(--yellow)">!</div>
+      <div class="step-title">Connect your LLM</div>
+    </div>
+    <p class="step-desc">SGO needs an OpenAI-compatible API key to run evaluations. Your key stays in your browser session.</p>
+    <div class="field">
+      <label>API key</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-...">
+    </div>
+    <details class="mb-8">
+      <summary style="cursor:pointer;color:var(--text2);font-size:0.85rem">Custom endpoint</summary>
+      <div style="padding:8px 0">
+        <div class="field">
+          <label>Base URL (optional)</label>
+          <input type="text" id="apiBaseUrl" placeholder="e.g. https://api.openai.com/v1">
+        </div>
+        <div class="field">
+          <label>Model (optional)</label>
+          <input type="text" id="apiModel" placeholder="e.g. gpt-4o-mini">
+        </div>
+      </div>
+    </details>
+    <button onclick="saveApiKey()">Connect</button>
+  </div>
+
   <!-- Nemotron setup (shown if not available) -->
   <div class="step hidden" id="nemotronSetup" style="border-color:var(--yellow)">
     <div class="step-header">
       <div class="step-num" style="border-color:var(--yellow);color:var(--yellow)">!</div>
       <div class="step-title">Panel data not found</div>
     </div>
-    <p class="step-desc">SGO needs its persona dataset to build realistic panels. Choose where to load it from, or download it now (~2 GB).</p>
-    <div class="field">
-      <label>Folder for panel data</label>
-      <input type="text" id="nemotronPath" placeholder="e.g. data/nemotron">
+    <p class="step-desc">SGO needs a persona dataset to build realistic panels. Pick a country and download, or point to an existing folder.</p>
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="flex:1;min-width:120px">
+        <label>Country</label>
+        <select id="nemotronDataset" style="padding:10px 12px">
+          <option value="USA">USA (6M personas)</option>
+          <option value="Japan">Japan (6M)</option>
+          <option value="India">India (21M)</option>
+          <option value="Singapore">Singapore (888K)</option>
+          <option value="Brazil">Brazil (6M)</option>
+          <option value="France">France (6M)</option>
+        </select>
+      </div>
+      <div class="field" style="flex:2;min-width:200px">
+        <label>Folder</label>
+        <input type="text" id="nemotronPath" placeholder="e.g. data/nemotron">
+      </div>
     </div>
     <div class="btn-row">
-      <button onclick="setupNemotron()">Use this folder</button>
+      <button onclick="setupNemotron()">Download and use</button>
     </div>
     <div id="nemotronStatus" class="hidden mt-16">
       <div class="progress-text" id="nemotronStatusText"></div>
@@ -579,9 +619,11 @@ async function init() {
   if (cfg.has_api_key) {
     badge.textContent = cfg.model;
     badge.className = 'config-badge ok';
+    document.getElementById('apiKeySetup').classList.add('hidden');
   } else {
-    badge.textContent = 'No API key — set LLM_API_KEY in .env';
+    badge.textContent = 'No API key';
     badge.className = 'config-badge warn';
+    document.getElementById('apiKeySetup').classList.remove('hidden');
   }
 
   const nemBadge = document.getElementById('nemotronBadge');
@@ -599,20 +641,43 @@ async function init() {
   // Changes are auto-generated from evaluation concerns
 }
 
+async function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) return alert('Enter your API key.');
+  const baseUrl = document.getElementById('apiBaseUrl').value.trim();
+  const model = document.getElementById('apiModel').value.trim();
+
+  try {
+    const resp = await fetch('/api/config/api-key', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({api_key: key, base_url: baseUrl, model: model}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || 'Failed');
+
+    document.getElementById('configBadge').textContent = data.model;
+    document.getElementById('configBadge').className = 'config-badge ok';
+    document.getElementById('apiKeySetup').classList.add('hidden');
+  } catch (e) {
+    alert('Failed to set API key: ' + e.message);
+  }
+}
+
 async function setupNemotron() {
-  const path = document.getElementById('nemotronPath').value.trim();
-  if (!path) return alert('Enter a folder path for the panel data.');
+  const path = document.getElementById('nemotronPath').value.trim() || 'data/nemotron';
+  const dataset = document.getElementById('nemotronDataset').value;
 
   const status = document.getElementById('nemotronStatus');
   const text = document.getElementById('nemotronStatusText');
   status.classList.remove('hidden');
-  text.textContent = 'Loading dataset (or downloading if not found — ~2GB, may take a few minutes)...';
+  text.textContent = `Loading ${dataset} personas (downloading if needed — may take a few minutes)...`;
 
   try {
     const resp = await fetch('/api/nemotron/setup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({path}),
+      body: JSON.stringify({path, dataset}),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.detail || 'Failed');

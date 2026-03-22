@@ -1,3 +1,12 @@
+---
+title: SGO — Semantic Gradient Optimization
+emoji: 📊
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+---
+
 # SGO — Semantic Gradient Optimization
 
 You're launching a product. You think the landing page is good. But **who have you actually asked?**
