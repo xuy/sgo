@@ -45,6 +45,21 @@ Be honest and realistic. Not everything is a match. Consider:
 
 You MUST respond with valid JSON only."""
 
+# Optional bias-aware addendum, appended to SYSTEM_PROMPT when --bias-calibration is used.
+# Inspired by CoBRA (Liu et al., CHI'26, arXiv:2509.13588).
+BIAS_CALIBRATION_ADDENDUM = """
+
+Important evaluation guidelines for realistic assessment:
+- Evaluate the SUBSTANCE of the entity, not its rhetorical framing. A gain-framed
+  description ("save 30%") and a loss-framed description ("stop wasting 30%") should
+  receive similar scores if the underlying value is the same.
+- Weight authority signals (certifications, press mentions, investor logos) proportionally
+  to how much this persona's real-world counterpart would actually verify and value them.
+- The ORDER in which information appears should not affect your score. Evaluate the
+  complete picture, not just first impressions.
+- Real people have genuine cognitive biases — you should too. But calibrate to realistic
+  human levels, not LLM defaults. A credential matters, but it's not everything."""
+
 EVAL_PROMPT = """## Evaluator Persona
 
 Name: {name}
@@ -80,7 +95,7 @@ Return JSON:
 }}"""
 
 
-def evaluate_one(client, model, evaluator, entity_text):
+def evaluate_one(client, model, evaluator, entity_text, system_prompt=None):
     prompt = EVAL_PROMPT.format(
         name=evaluator["name"],
         age=evaluator.get("age", ""),
@@ -96,7 +111,7 @@ def evaluate_one(client, model, evaluator, entity_text):
         resp = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
@@ -178,6 +193,8 @@ def main():
     parser.add_argument("--tag", default=None)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--parallel", type=int, default=5)
+    parser.add_argument("--bias-calibration", action="store_true",
+                        help="Add CoBRA-inspired bias calibration instructions (arXiv:2509.13588)")
     args = parser.parse_args()
 
     entity_text = Path(args.entity).read_text()
@@ -190,6 +207,11 @@ def main():
     if args.limit:
         cohort = cohort[:args.limit]
 
+    sys_prompt = SYSTEM_PROMPT
+    if args.bias_calibration:
+        sys_prompt += BIAS_CALIBRATION_ADDENDUM
+        print("Bias calibration: ON (CoBRA-inspired, arXiv:2509.13588)")
+
     print(f"Evaluating {len(cohort)} evaluators | Model: {model} | Workers: {args.parallel}")
 
     results = [None] * len(cohort)
@@ -197,7 +219,7 @@ def main():
     t0 = time.time()
 
     def worker(idx, ev):
-        return idx, evaluate_one(client, model, ev, entity_text)
+        return idx, evaluate_one(client, model, ev, entity_text, system_prompt=sys_prompt)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel) as pool:
         futs = {pool.submit(worker, i, e): i for i, e in enumerate(cohort)}
