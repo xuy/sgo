@@ -44,8 +44,23 @@ from bias_audit import (
     reframe_entity, add_authority_signals, reorder_entity,
     run_paired_evaluation, analyze_probe, generate_report, HUMAN_BASELINES,
 )
-from persona_loader import load_personas, filter_personas, to_profile
-from stratified_sampler import stratified_sample, age_bracket, make_occupation_fn
+# Lazy imports — persona_loader pulls in HuggingFace datasets (~5s load)
+_persona_loader = None
+_stratified_sampler = None
+
+def _lazy_persona_loader():
+    global _persona_loader
+    if _persona_loader is None:
+        import persona_loader as _pl
+        _persona_loader = _pl
+    return _persona_loader
+
+def _lazy_stratified_sampler():
+    global _stratified_sampler
+    if _stratified_sampler is None:
+        import stratified_sampler as _ss
+        _stratified_sampler = _ss
+    return _stratified_sampler
 
 app = FastAPI(title="SGO — Semantic Gradient Optimization")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -89,7 +104,7 @@ def get_nemotron(data_dir=None):
     path = find_nemotron_path()
     if path:
         try:
-            _nemotron_ds = load_personas(data_dir=path)
+            _nemotron_ds = _lazy_persona_loader().load_personas(data_dir=path)
             print(f"Nemotron loaded: {len(_nemotron_ds)} personas from {path}")
             return _nemotron_ds
         except Exception as e:
@@ -263,18 +278,20 @@ async def generate_cohort_endpoint(config: CohortConfig):
     ds = get_nemotron()
     if ds is not None:
         # Use census-grounded Nemotron personas
-        filtered = filter_personas(ds, {}, limit=max(total * 20, 2000))
-        profiles = [to_profile(row, i) for i, row in enumerate(filtered)]
+        pl = _lazy_persona_loader()
+        ss = _lazy_stratified_sampler()
+        filtered = pl.filter_personas(ds, {}, limit=max(total * 20, 2000))
+        profiles = [pl.to_profile(row, i) for i, row in enumerate(filtered)]
 
         dim_fns = [
-            lambda p: age_bracket(p.get("age", 30)),
+            lambda p: ss.age_bracket(p.get("age", 30)),
             lambda p: p.get("marital_status", "unknown"),
             lambda p: p.get("education_level", "") or "unknown",
         ]
         diversity_fn = lambda p: p.get("occupation", "unknown") or "unknown"
 
-        all_personas = stratified_sample(profiles, dim_fns, total=total,
-                                         diversity_fn=diversity_fn)
+        all_personas = ss.stratified_sample(profiles, dim_fns, total=total,
+                                            diversity_fn=diversity_fn)
         source = "nemotron"
     else:
         # Fallback: LLM-generated
