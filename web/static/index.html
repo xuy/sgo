@@ -905,16 +905,22 @@ async function runDirections() {
     // Phase 3: Run counterfactual probes
     document.getElementById('cfProgressText').textContent = 'Testing changes against persuadable middle...';
 
-    const params = new URLSearchParams({
-      changes_json: JSON.stringify(suggestedChanges),
-      goal: goal,
-      min_score: 4,
-      max_score: 7,
-      parallel: 5,
+    // POST config first, get a ticket, then SSE with just the ticket
+    const prepResp = await fetch(`/api/counterfactual/prepare/${sessionId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        changes: suggestedChanges,
+        goal: goal,
+        min_score: 4,
+        max_score: 7,
+        parallel: 5,
+      }),
     });
+    const {ticket} = await prepResp.json();
 
     await new Promise((resolve, reject) => {
-      const es = new EventSource(`/api/counterfactual/stream/${sessionId}?${params}`);
+      const es = new EventSource(`/api/counterfactual/stream/${sessionId}?ticket=${ticket}`);
 
       es.addEventListener('start', (e) => {
         const d = JSON.parse(e.data);

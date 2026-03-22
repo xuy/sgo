@@ -565,19 +565,45 @@ async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = 
     return EventSourceResponse(event_generator())
 
 
+class CounterfactualRequest(BaseModel):
+    changes: list[dict]
+    goal: str = ""
+    min_score: int = 4
+    max_score: int = 7
+    parallel: int = 5
+
+
+# Store pending counterfactual configs for SSE pickup
+_cf_pending: dict = {}
+
+
+@app.post("/api/counterfactual/prepare/{sid}")
+async def prepare_counterfactual(sid: str, req: CounterfactualRequest):
+    """Stage counterfactual config, return a ticket for the SSE stream."""
+    if sid not in sessions:
+        raise HTTPException(404, "Session not found")
+    ticket = uuid.uuid4().hex[:8]
+    _cf_pending[ticket] = req
+    return {"ticket": ticket}
+
+
 @app.get("/api/counterfactual/stream/{sid}")
-async def counterfactual_stream(
-    sid: str, changes_json: str, goal: str = "",
-    min_score: int = 4, max_score: int = 7, parallel: int = 5
-):
-    """Run counterfactual probes with SSE progress. Goal enables VJP weighting."""
+async def counterfactual_stream(sid: str, ticket: str, **_):
+    """Run counterfactual probes with SSE progress."""
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
     session = sessions[sid]
     if not session["eval_results"]:
         raise HTTPException(400, "Run evaluation first")
+    req = _cf_pending.pop(ticket, None)
+    if not req:
+        raise HTTPException(400, "Invalid or expired ticket")
 
-    all_changes = json.loads(changes_json)
+    all_changes = req.changes
+    goal = req.goal
+    min_score = req.min_score
+    max_score = req.max_score
+    parallel = req.parallel
 
     async def event_generator():
         client = get_client()
