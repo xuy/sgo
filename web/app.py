@@ -44,12 +44,57 @@ from bias_audit import (
     reframe_entity, add_authority_signals, reorder_entity,
     run_paired_evaluation, analyze_probe, generate_report, HUMAN_BASELINES,
 )
+from persona_loader import load_personas, filter_personas, to_profile
+from stratified_sampler import stratified_sample, age_bracket, make_occupation_fn
 
 app = FastAPI(title="SGO — Semantic Gradient Optimization")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # In-memory store for active sessions
 sessions: dict = {}
+
+# Nemotron dataset — loaded once if available
+_nemotron_ds = None
+_nemotron_checked = False
+
+NEMOTRON_SEARCH_PATHS = [
+    PROJECT_ROOT / "data" / "nemotron",
+    Path.home() / "data" / "nvidia" / "Nemotron-Personas-USA",
+    Path.home() / "data" / "nemotron",
+    Path(os.getenv("NEMOTRON_DATA_DIR", "/nonexistent")),
+]
+
+
+def find_nemotron_path():
+    """Find Nemotron dataset on disk. Returns path or None."""
+    for path in NEMOTRON_SEARCH_PATHS:
+        if (path / "dataset_info.json").exists():
+            return path
+    return None
+
+
+def get_nemotron(data_dir=None):
+    """Load Nemotron dataset. Returns None if not found."""
+    global _nemotron_ds, _nemotron_checked
+    if data_dir:
+        # Explicit path — reset cache
+        _nemotron_checked = False
+        _nemotron_ds = None
+        NEMOTRON_SEARCH_PATHS.insert(0, Path(data_dir))
+
+    if _nemotron_checked:
+        return _nemotron_ds
+
+    _nemotron_checked = True
+    path = find_nemotron_path()
+    if path:
+        try:
+            _nemotron_ds = load_personas(data_dir=path)
+            print(f"Nemotron loaded: {len(_nemotron_ds)} personas from {path}")
+            return _nemotron_ds
+        except Exception as e:
+            print(f"Failed to load Nemotron from {path}: {e}")
+    return None
 
 
 def get_client():
@@ -102,12 +147,41 @@ async def index():
 
 @app.get("/api/config")
 async def get_config():
-    """Return current LLM config (model name, whether API key is set)."""
+    """Return current LLM config and Nemotron status."""
+    nem_path = find_nemotron_path()
     return {
         "model": get_model(),
         "has_api_key": bool(os.getenv("LLM_API_KEY")),
         "base_url": os.getenv("LLM_BASE_URL", ""),
+        "nemotron_path": str(nem_path) if nem_path else None,
+        "nemotron_available": nem_path is not None,
     }
+
+
+class NemotronPathInput(BaseModel):
+    path: str
+
+
+@app.post("/api/nemotron/setup")
+async def setup_nemotron(input: NemotronPathInput):
+    """Point to existing Nemotron data, or download it to the given path."""
+    p = Path(input.path).expanduser().resolve()
+
+    if (p / "dataset_info.json").exists():
+        # Already there — just load it
+        ds = get_nemotron(data_dir=str(p))
+        if ds is None:
+            raise HTTPException(500, "Failed to load dataset")
+        return {"status": "loaded", "path": str(p), "count": len(ds)}
+
+    # Not there — download to this path
+    from setup_data import setup
+    try:
+        ds = setup(data_dir=p)
+        get_nemotron(data_dir=str(p))
+        return {"status": "downloaded", "path": str(p), "count": len(ds)}
+    except Exception as e:
+        raise HTTPException(500, f"Download failed: {e}")
 
 
 @app.post("/api/session")
@@ -182,22 +256,42 @@ Be concrete and relevant — no generic segments."""
 
 @app.post("/api/cohort/generate")
 async def generate_cohort_endpoint(config: CohortConfig):
-    """Generate an LLM cohort and attach to a new session."""
+    """Generate a cohort — from Nemotron if available, else LLM-generated."""
     sid = uuid.uuid4().hex[:12]
+    total = sum(s.get("count", 8) for s in config.segments)
 
-    client = get_client()
-    model = get_model()
-    all_personas = []
+    ds = get_nemotron()
+    if ds is not None:
+        # Use census-grounded Nemotron personas
+        filtered = filter_personas(ds, {}, limit=max(total * 20, 2000))
+        profiles = [to_profile(row, i) for i, row in enumerate(filtered)]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as pool:
-        futs = {
-            pool.submit(generate_segment, client, model,
-                        seg["label"], seg["count"], config.description): seg
-            for seg in config.segments
-        }
-        for fut in concurrent.futures.as_completed(futs):
-            personas = fut.result()
-            all_personas.extend(personas)
+        dim_fns = [
+            lambda p: age_bracket(p.get("age", 30)),
+            lambda p: p.get("marital_status", "unknown"),
+            lambda p: p.get("education_level", "") or "unknown",
+        ]
+        diversity_fn = lambda p: p.get("occupation", "unknown") or "unknown"
+
+        all_personas = stratified_sample(profiles, dim_fns, total=total,
+                                         diversity_fn=diversity_fn)
+        source = "nemotron"
+    else:
+        # Fallback: LLM-generated
+        client = get_client()
+        model = get_model()
+        all_personas = []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as pool:
+            futs = {
+                pool.submit(generate_segment, client, model,
+                            seg["label"], seg["count"], config.description): seg
+                for seg in config.segments
+            }
+            for fut in concurrent.futures.as_completed(futs):
+                personas = fut.result()
+                all_personas.extend(personas)
+        source = "llm-generated"
 
     for i, p in enumerate(all_personas):
         p["user_id"] = i
@@ -211,7 +305,10 @@ async def generate_cohort_endpoint(config: CohortConfig):
         "created": datetime.now().isoformat(),
     }
 
-    return {"session_id": sid, "cohort_size": len(all_personas), "cohort": all_personas}
+    return {
+        "session_id": sid, "cohort_size": len(all_personas),
+        "cohort": all_personas, "source": source,
+    }
 
 
 @app.post("/api/cohort/upload/{sid}")

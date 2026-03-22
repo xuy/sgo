@@ -308,7 +308,27 @@
     <h1>Semantic Gradient Optimization</h1>
     <p>Evaluate anything against a synthetic panel. Find what to change first.</p>
     <div id="configBadge" class="config-badge">checking...</div>
+    <div id="nemotronBadge" class="config-badge" style="margin-left:8px">checking...</div>
   </header>
+
+  <!-- Nemotron setup (shown if not available) -->
+  <div class="step hidden" id="nemotronSetup" style="border-color:var(--yellow)">
+    <div class="step-header">
+      <div class="step-num" style="border-color:var(--yellow);color:var(--yellow)">!</div>
+      <div class="step-title">Persona dataset not found</div>
+    </div>
+    <p class="step-desc">SGO uses 1M census-grounded personas for realistic evaluations. Provide a path to the dataset or download it (~2GB).</p>
+    <div class="field">
+      <label>Dataset path</label>
+      <input type="text" id="nemotronPath" placeholder="">
+    </div>
+    <div class="btn-row">
+      <button onclick="setupNemotron()">Load or download</button>
+    </div>
+    <div id="nemotronStatus" class="hidden mt-16">
+      <div class="progress-text" id="nemotronStatusText"></div>
+    </div>
+  </div>
 
   <!-- STEP 1: Entity + Evaluate (one click) -->
   <div class="step active" id="step1">
@@ -547,6 +567,7 @@ let evalResultsData = null;
 async function init() {
   const resp = await fetch('/api/config');
   const cfg = await resp.json();
+
   const badge = document.getElementById('configBadge');
   if (cfg.has_api_key) {
     badge.textContent = cfg.model;
@@ -556,8 +577,55 @@ async function init() {
     badge.className = 'config-badge warn';
   }
 
+  const nemBadge = document.getElementById('nemotronBadge');
+  if (cfg.nemotron_available) {
+    nemBadge.textContent = 'Nemotron 1M';
+    nemBadge.className = 'config-badge ok';
+  } else {
+    nemBadge.textContent = 'No persona dataset';
+    nemBadge.className = 'config-badge warn';
+    document.getElementById('nemotronSetup').classList.remove('hidden');
+    // Default path: project's data dir
+    document.getElementById('nemotronPath').value = cfg.base_url ? '' : 'data/nemotron';
+  }
+
   addChange('', '');
   addChange('', '');
+}
+
+async function setupNemotron() {
+  const path = document.getElementById('nemotronPath').value.trim();
+  if (!path) return alert('Please enter a path.');
+
+  const status = document.getElementById('nemotronStatus');
+  const text = document.getElementById('nemotronStatusText');
+  status.classList.remove('hidden');
+  text.textContent = 'Loading dataset (or downloading if not found — ~2GB, may take a few minutes)...';
+
+  try {
+    const resp = await fetch('/api/nemotron/setup', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || 'Failed');
+
+    text.textContent = `${data.status === 'downloaded' ? 'Downloaded' : 'Loaded'}: ${data.count.toLocaleString()} personas`;
+    text.style.color = 'var(--green)';
+
+    const nemBadge = document.getElementById('nemotronBadge');
+    nemBadge.textContent = 'Nemotron 1M';
+    nemBadge.className = 'config-badge ok';
+
+    // Hide setup after a moment
+    setTimeout(() => {
+      document.getElementById('nemotronSetup').classList.add('hidden');
+    }, 2000);
+  } catch (e) {
+    text.textContent = `Error: ${e.message}`;
+    text.style.color = 'var(--red)';
+  }
 }
 
 // ── Templates ──
@@ -669,7 +737,8 @@ async function runFullPipeline() {
       body: JSON.stringify(cohortData.cohort),
     });
 
-    logStep(`${cohortData.cohort_size} evaluators generated`, 'pos');
+    const src = cohortData.source === 'nemotron' ? 'census-grounded (Nemotron)' : 'LLM-generated';
+    logStep(`${cohortData.cohort_size} evaluators ready — ${src}`, 'pos');
     document.getElementById('pipelineProgressBar').style.width = '35%';
 
     // Phase 4: Evaluate via SSE
