@@ -37,9 +37,13 @@ from openai import OpenAI
 # Import core functions from existing scripts
 import sys
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-from evaluate import evaluate_one, analyze as analyze_eval
+from evaluate import evaluate_one, analyze as analyze_eval, SYSTEM_PROMPT, BIAS_CALIBRATION_ADDENDUM
 from counterfactual import probe_one, analyze_gradient, build_changes_block
 from generate_cohort import generate_segment
+from bias_audit import (
+    reframe_entity, add_authority_signals, reorder_entity,
+    run_paired_evaluation, analyze_probe, generate_report, HUMAN_BASELINES,
+)
 
 app = FastAPI(title="SGO — Semantic Gradient Optimization")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -175,7 +179,7 @@ async def upload_cohort(sid: str, cohort: list[dict]):
 # ── SSE streaming endpoints ──────────────────────────────────────────────
 
 @app.get("/api/evaluate/stream/{sid}")
-async def evaluate_stream(sid: str, parallel: int = 5):
+async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = False):
     """Run evaluation with Server-Sent Events for real-time progress."""
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
@@ -189,8 +193,12 @@ async def evaluate_stream(sid: str, parallel: int = 5):
         cohort = session["cohort"]
         entity_text = session["entity_text"]
         total = len(cohort)
+        sys_prompt = SYSTEM_PROMPT + BIAS_CALIBRATION_ADDENDUM if bias_calibration else None
 
-        yield {"event": "start", "data": json.dumps({"total": total, "model": model})}
+        yield {"event": "start", "data": json.dumps({
+            "total": total, "model": model,
+            "bias_calibration": bias_calibration,
+        })}
 
         results = [None] * total
         done = 0
@@ -199,7 +207,8 @@ async def evaluate_stream(sid: str, parallel: int = 5):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
             futs = {
-                pool.submit(evaluate_one, client, model, ev, entity_text): i
+                pool.submit(evaluate_one, client, model, ev, entity_text,
+                            system_prompt=sys_prompt): i
                 for i, ev in enumerate(cohort)
             }
             for fut in concurrent.futures.as_completed(futs):
@@ -317,6 +326,89 @@ async def counterfactual_stream(
             "elapsed": round(elapsed, 1),
             "gradient": gradient_text,
             "results": results,
+        })}
+
+    return EventSourceResponse(event_generator())
+
+
+@app.get("/api/bias-audit/stream/{sid}")
+async def bias_audit_stream(
+    sid: str, probes: str = "framing,authority,order",
+    sample: int = 10, parallel: int = 5
+):
+    """Run bias audit probes with SSE progress."""
+    if sid not in sessions:
+        raise HTTPException(404, "Session not found")
+    session = sessions[sid]
+    if not session["cohort"]:
+        raise HTTPException(400, "No cohort — generate or upload one first")
+
+    probe_list = [p.strip() for p in probes.split(",") if p.strip()]
+
+    async def event_generator():
+        import random
+        client = get_client()
+        model = get_model()
+        cohort = session["cohort"]
+        entity_text = session["entity_text"]
+
+        random.seed(42)
+        evaluators = random.sample(cohort, min(sample, len(cohort)))
+
+        yield {"event": "start", "data": json.dumps({
+            "probes": probe_list,
+            "sample_size": len(evaluators),
+            "model": model,
+        })}
+
+        all_analyses = []
+
+        for probe_name in probe_list:
+            yield {"event": "probe_start", "data": json.dumps({"probe": probe_name})}
+
+            t0 = time.time()
+
+            if probe_name == "framing":
+                gain_entity = reframe_entity(client, model, entity_text, "gain")
+                loss_entity = reframe_entity(client, model, entity_text, "loss")
+                results = run_paired_evaluation(
+                    client, model, evaluators, gain_entity, loss_entity,
+                    "gain", "loss", parallel,
+                )
+                label_a, label_b = "gain", "loss"
+            elif probe_name == "authority":
+                entity_with_auth = add_authority_signals(entity_text)
+                results = run_paired_evaluation(
+                    client, model, evaluators, entity_text, entity_with_auth,
+                    "baseline", "authority", parallel,
+                )
+                label_a, label_b = "baseline", "authority"
+            elif probe_name == "order":
+                reordered = reorder_entity(entity_text)
+                results = run_paired_evaluation(
+                    client, model, evaluators, entity_text, reordered,
+                    "original", "reordered", parallel,
+                )
+                label_a, label_b = "original", "reordered"
+            else:
+                continue
+
+            elapsed = time.time() - t0
+            analysis = analyze_probe(results, probe_name, label_a, label_b)
+            analysis["elapsed_s"] = round(elapsed, 1)
+            all_analyses.append(analysis)
+
+            yield {"event": "probe_complete", "data": json.dumps({
+                "probe": probe_name,
+                "analysis": analysis,
+            })}
+
+        report = generate_report(all_analyses, model)
+        session["bias_audit"] = {"analyses": all_analyses, "report": report}
+
+        yield {"event": "complete", "data": json.dumps({
+            "analyses": all_analyses,
+            "report": report,
         })}
 
     return EventSourceResponse(event_generator())

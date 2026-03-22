@@ -3,7 +3,7 @@ name = "semantic-gradient-optimization"
 version = "0.1.0"
 description = "Optimize entities against evaluator populations using LLMs and counterfactual probes"
 requires-python = ">=3.11"
-license = {text = "CC-BY-4.0"}
+license = {text = "MIT"}
 
 dependencies = [
     "datasets>=4.0.0",

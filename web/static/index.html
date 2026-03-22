@@ -374,6 +374,10 @@
 
     <div class="btn-row">
       <button onclick="runEval()" id="evalBtn">Evaluate</button>
+      <label style="display:flex;align-items:center;gap:6px;margin:0">
+        <input type="checkbox" id="biasCalibration">
+        <span style="font-size:0.8rem;color:var(--text2)">Bias calibration</span>
+      </label>
       <div style="flex:1"></div>
       <label style="display:flex;align-items:center;gap:6px;margin:0">
         <span style="font-size:0.8rem;color:var(--text2)">Parallel:</span>
@@ -399,7 +403,10 @@
         <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full analysis</summary>
         <div class="results-details" id="evalAnalysis"></div>
       </details>
-      <button class="mt-16" onclick="goToStep(4)">Continue to gradient</button>
+      <div class="btn-row mt-16">
+        <button onclick="goToStep(4)">Continue to gradient</button>
+        <button class="secondary" onclick="goToStep(5)">Run bias audit</button>
+      </div>
     </div>
   </div>
 
@@ -444,6 +451,66 @@
         <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full gradient output</summary>
         <div class="results-details" id="gradientText"></div>
       </details>
+    </div>
+  </div>
+
+  <!-- STEP 5: Bias Audit -->
+  <div class="step hidden" id="step5">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div class="step-title">Bias Audit</div>
+    </div>
+    <p class="step-desc">
+      Measure cognitive biases in your evaluator panel using validated social science experiments
+      (<a href="https://arxiv.org/abs/2509.13588" target="_blank" style="color:var(--accent2)">CoBRA, CHI'26</a>).
+    </p>
+
+    <div class="field">
+      <label>Probes to run</label>
+      <div style="display:flex;gap:16px;margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:0.85rem">
+          <input type="checkbox" id="probeFraming" checked> Framing effect
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:0.85rem">
+          <input type="checkbox" id="probeAuthority" checked> Authority bias
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:0.85rem">
+          <input type="checkbox" id="probeOrder" checked> Order effect
+        </label>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button onclick="runBiasAudit()" id="auditBtn">Run audit</button>
+      <div style="flex:1"></div>
+      <label style="display:flex;align-items:center;gap:6px;margin:0">
+        <span style="font-size:0.8rem;color:var(--text2)">Sample size:</span>
+        <input type="number" id="auditSample" value="10" min="1" max="50"
+               style="width:60px;padding:6px;text-align:center">
+      </label>
+    </div>
+
+    <div id="auditProgress" class="hidden mt-16">
+      <div class="progress-text" id="auditProgressText">Running bias probes...</div>
+      <div class="progress-bar"><div class="progress-fill" id="auditProgressBar"></div></div>
+    </div>
+
+    <div id="auditResults" class="hidden mt-16">
+      <h3 style="margin-bottom:12px">Bias Audit Results</h3>
+      <table class="gradient-table" id="auditTable">
+        <thead>
+          <tr><th>Probe</th><th>Shifted %</th><th>Avg |Delta|</th><th>Human Baseline</th><th>Assessment</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <details class="mt-12">
+        <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full report</summary>
+        <div class="results-details" id="auditReport"></div>
+      </details>
+      <div class="btn-row mt-16">
+        <button class="secondary" onclick="goToStep(3)">Re-evaluate with bias calibration</button>
+        <button class="secondary" onclick="goToStep(4)">Continue to gradient</button>
+      </div>
     </div>
   </div>
 </div>
@@ -547,8 +614,9 @@ function loadTemplate(name) {
 // ── Step navigation ──
 
 function goToStep(n) {
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 5; i++) {
     const el = document.getElementById(`step${i}`);
+    if (!el) continue;
     if (i < n) {
       el.classList.remove('hidden', 'active');
       el.classList.add('done');
@@ -559,6 +627,12 @@ function goToStep(n) {
       el.classList.add('hidden');
       el.classList.remove('active', 'done');
     }
+  }
+  // When going to bias audit, keep steps 4/5 both visible context
+  if (n === 5) {
+    const step3 = document.getElementById('step3');
+    step3.classList.remove('hidden');
+    step3.classList.add('done');
   }
 }
 
@@ -662,6 +736,7 @@ async function generateCohort() {
 function runEval() {
   if (!sessionId) return alert('No session.');
   const parallel = parseInt(document.getElementById('evalParallel').value) || 5;
+  const biasCal = document.getElementById('biasCalibration').checked;
   const btn = document.getElementById('evalBtn');
   btn.disabled = true;
 
@@ -669,7 +744,8 @@ function runEval() {
   document.getElementById('evalResults').classList.add('hidden');
   document.getElementById('evalLog').innerHTML = '';
 
-  const es = new EventSource(`/api/evaluate/stream/${sessionId}?parallel=${parallel}`);
+  const params = new URLSearchParams({parallel, bias_calibration: biasCal});
+  const es = new EventSource(`/api/evaluate/stream/${sessionId}?${params}`);
 
   es.addEventListener('start', (e) => {
     const d = JSON.parse(e.data);
@@ -870,6 +946,107 @@ function renderGradientTable(results, changes) {
       </tr>
     `;
   });
+}
+
+// ── Step 5: Bias Audit ──
+
+function runBiasAudit() {
+  if (!sessionId) return alert('No session.');
+  const probes = [];
+  if (document.getElementById('probeFraming').checked) probes.push('framing');
+  if (document.getElementById('probeAuthority').checked) probes.push('authority');
+  if (document.getElementById('probeOrder').checked) probes.push('order');
+  if (probes.length === 0) return alert('Select at least one probe.');
+
+  const sample = parseInt(document.getElementById('auditSample').value) || 10;
+  const btn = document.getElementById('auditBtn');
+  btn.disabled = true;
+
+  document.getElementById('auditProgress').classList.remove('hidden');
+  document.getElementById('auditResults').classList.add('hidden');
+
+  let probesDone = 0;
+  const totalProbes = probes.length;
+
+  const params = new URLSearchParams({probes: probes.join(','), sample, parallel: 5});
+  const es = new EventSource(`/api/bias-audit/stream/${sessionId}?${params}`);
+
+  es.addEventListener('start', (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById('auditProgressText').textContent =
+      `Running ${d.probes.length} probes on ${d.sample_size} evaluators (${d.model})...`;
+  });
+
+  es.addEventListener('probe_start', (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById('auditProgressText').textContent =
+      `Running ${d.probe} probe...`;
+  });
+
+  es.addEventListener('probe_complete', (e) => {
+    probesDone++;
+    const pct = Math.round(probesDone / totalProbes * 100);
+    document.getElementById('auditProgressBar').style.width = pct + '%';
+    const d = JSON.parse(e.data);
+    document.getElementById('auditProgressText').textContent =
+      `${d.probe}: ${d.analysis.shifted_pct}% shifted (${probesDone}/${totalProbes} probes done)`;
+  });
+
+  es.addEventListener('complete', (e) => {
+    es.close();
+    const d = JSON.parse(e.data);
+
+    document.getElementById('auditProgressBar').style.width = '100%';
+    document.getElementById('auditProgressText').textContent = 'Audit complete';
+
+    const tbody = document.querySelector('#auditTable tbody');
+    tbody.innerHTML = '';
+    const baselines = {framing: 30, authority: 20, order: 0};
+
+    d.analyses.forEach(a => {
+      if (a.error) {
+        tbody.innerHTML += `<tr><td>${a.probe}</td><td colspan="4">Error: ${a.error}</td></tr>`;
+        return;
+      }
+      const expected = baselines[a.probe];
+      const gap = a.shifted_pct - (expected || 0);
+      let assessment, assessCls;
+      if (expected !== undefined) {
+        if (gap > 10) { assessment = 'Over-biased'; assessCls = 'color:var(--red)'; }
+        else if (gap < -10) { assessment = 'Under-biased'; assessCls = 'color:var(--yellow)'; }
+        else { assessment = 'Well-calibrated'; assessCls = 'color:var(--green)'; }
+      } else {
+        assessment = '—'; assessCls = '';
+      }
+
+      tbody.innerHTML += `
+        <tr>
+          <td style="font-weight:600">${a.probe}</td>
+          <td>${a.shifted_pct.toFixed(1)}%</td>
+          <td>${a.avg_abs_delta.toFixed(2)}</td>
+          <td style="color:var(--text2)">${expected !== undefined ? expected + '%' : '—'}</td>
+          <td style="${assessCls};font-weight:600">${assessment}</td>
+        </tr>
+      `;
+    });
+
+    document.getElementById('auditReport').textContent = d.report;
+    document.getElementById('auditResults').classList.remove('hidden');
+
+    // If over-biased, auto-check the bias calibration checkbox
+    const hasOverBias = d.analyses.some(a => a.shifted_pct - (baselines[a.probe] || 0) > 10);
+    if (hasOverBias) {
+      document.getElementById('biasCalibration').checked = true;
+    }
+
+    btn.disabled = false;
+  });
+
+  es.onerror = () => {
+    es.close();
+    document.getElementById('auditProgressText').textContent = 'Connection lost';
+    btn.disabled = false;
+  };
 }
 
 // Boot

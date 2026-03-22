@@ -45,11 +45,25 @@ In each case, SGO tells you **where you stand**, **what's working**, **what's no
 
 ---
 
-## Install
+## Quick Start
 
-Tell your coding agent:
+```bash
+git clone https://github.com/xuy/sgo.git && cd sgo
+cp .env.example .env   # Add your LLM API key (any OpenAI-compatible provider)
+uv sync
+uv run --extra web python web/app.py
+# Opens at http://localhost:8000
+```
 
-> *"Install the SGO skill from https://github.com/xuy/sgo"*
+The web interface walks you through the full pipeline: describe your entity, build a panel, evaluate, find the highest-impact changes, and audit your panel for cognitive biases.
+
+<details>
+<summary>Alternative: use as a Claude Code skill</summary>
+
+```bash
+git clone https://github.com/xuy/sgo.git ~/.claude/skills/sgo
+cd ~/.claude/skills/sgo && cp .env.example .env && uv sync
+```
 
 Then run:
 
@@ -59,19 +73,15 @@ Then run:
 /sgo "optimize my landing page"   # Start from a description
 ```
 
+</details>
+
 <details>
-<summary>Manual install</summary>
+<summary>CLI-only usage (no web interface)</summary>
 
 ```bash
-# As a Claude Code skill
-git clone https://github.com/xuy/sgo.git ~/.claude/skills/sgo
-cd ~/.claude/skills/sgo && cp .env.example .env && uv sync
-
-# Or standalone
-git clone https://github.com/xuy/sgo.git && cd sgo
-cp .env.example .env   # Add your LLM API key (any OpenAI-compatible provider)
-uv sync
 uv run python scripts/setup_data.py   # Download Nemotron personas (once, ~2GB)
+# Then use scripts directly: evaluate.py, counterfactual.py, bias_audit.py, compare.py
+# See AGENT.md for the full pipeline reference
 ```
 
 </details>
@@ -302,6 +312,9 @@ Only probe changes you'd actually make:
 │   ├── counterfactual.py   # Semantic gradient probe
 │   ├── bias_audit.py       # CoBRA-inspired cognitive bias measurement
 │   └── compare.py          # Cross-run diff
+├── web/
+│   ├── app.py              # FastAPI backend (primary entry point)
+│   └── static/index.html   # Single-page frontend
 ├── templates/              # Entity + changes templates
 ├── entities/               # Your documents (gitignored)
 ├── data/                   # Cohorts (gitignored)
@@ -312,4 +325,4 @@ Only probe changes you'd actually make:
 
 ## License
 
-CC-BY-4.0
+MIT
