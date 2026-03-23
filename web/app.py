@@ -62,6 +62,10 @@ def _lazy_stratified_sampler():
         _stratified_sampler = _ss
     return _stratified_sampler
 
+import logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+log = logging.getLogger("sgo")
+
 app = FastAPI(title="SGO — Semantic Gradient Optimization")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
@@ -287,6 +291,7 @@ async def setup_nemotron(input: NemotronPathInput):
 async def create_session(entity: EntityInput):
     """Create a new evaluation session with an entity."""
     sid = uuid.uuid4().hex[:12]
+    log.info(f"New session {sid} ({len(entity.entity_text)} chars)")
     sessions[sid] = {
         "id": sid,
         "entity_text": entity.entity_text,
@@ -322,6 +327,7 @@ class InferSpecInput(BaseModel):
 @app.post("/api/infer-spec")
 async def infer_spec(input: InferSpecInput, request: Request):
     """Infer goal and audience from entity text."""
+    log.info(f"Infer spec ({request.client.host})")
     client, model = llm_from_request(request)
 
     prompt = f"""Read this entity and infer two things:
@@ -363,6 +369,7 @@ Be specific to THIS entity, not generic."""
 @app.post("/api/suggest-changes")
 async def suggest_changes(input: SuggestChangesInput, request: Request):
     """Generate candidate changes from evaluation concerns and goal."""
+    log.info(f"Suggest changes ({len(input.concerns)} concerns)")
     client, model = llm_from_request(request)
 
     concerns_text = "\n".join(f"- {c}" for c in input.concerns[:15])
@@ -405,6 +412,7 @@ Return JSON:
 @app.post("/api/suggest-segments")
 async def suggest_segments(input: SuggestSegmentsInput, request: Request):
     """Use LLM to suggest audience segments based on entity and context."""
+    log.info("Suggest segments")
     client, model = llm_from_request(request)
 
     prompt = f"""Given this entity and audience context, suggest 4-5 evaluator segments.
@@ -490,6 +498,7 @@ If nothing specific is stated, return {{}}."""
 async def generate_cohort_endpoint(config: CohortConfig, request: Request):
     """Generate a cohort — from Nemotron if available, else LLM-generated."""
     total = sum(s.get("count", 8) for s in config.segments)
+    log.info(f"Generate cohort: {total} personas, {len(config.segments)} segments")
 
     ds = get_nemotron()
     if ds is not None:
@@ -561,12 +570,12 @@ async def evaluate_stream(sid: str, request: Request, parallel: int = 5,
                           bias_calibration: bool = False):
     """Run evaluation with Server-Sent Events for real-time progress."""
     _check_rate_limit(request.client.host)
+    log.info(f"Evaluate stream {sid}")
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
     session = sessions[sid]
     if not session["cohort"]:
         raise HTTPException(400, "No cohort — generate or upload one first")
-    # Cap parallel to prevent abuse
     parallel = min(parallel, 10)
 
     # Capture LLM config from request headers before entering async generator
