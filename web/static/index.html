@@ -167,6 +167,13 @@
     transition: width 0.3s;
     width: 0%;
   }
+  .progress-fill.pulsing {
+    animation: pulse-bar 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-bar {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
   .progress-text {
     font-size: 0.85rem;
     color: var(--text2);
@@ -824,21 +831,48 @@ async function runFullPipeline() {
     sessionId = sessData.session_id;
     // session created silently
 
+    // Start elapsed timer
+    const startTime = Date.now();
+    const timerInterval = setInterval(() => {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const current = document.getElementById('pipelineProgressText').textContent;
+      const base = current.replace(/ \(\d+s\)$/, '');
+      document.getElementById('pipelineProgressText').textContent = `${base} (${elapsed}s)`;
+    }, 1000);
+    document.getElementById('pipelineProgressBar').classList.add('pulsing');
+
     // Phase 2: Suggest segments
     document.getElementById('pipelineProgressText').textContent = 'Choosing panel segments...';
     document.getElementById('pipelineProgressBar').style.width = '10%';
-    logStep('Choosing the right panel segments...');
+    logStep('Asking LLM to choose panel segments...');
 
-    const segResp = await fetch(apiUrl('/api/suggest-segments'), {
-      method: 'POST',
-      headers: llmHeaders(),
-      body: JSON.stringify({
-        entity_text: text,
-        audience_context: audienceCtx || `People who would evaluate: ${text.substring(0, 200)}`,
-      }),
-    });
-    const segData = await segResp.json();
-    const segments = segData.segments || [];
+    let segments;
+    try {
+      const segResp = await Promise.race([
+        fetch(apiUrl('/api/suggest-segments'), {
+          method: 'POST',
+          headers: llmHeaders(),
+          body: JSON.stringify({
+            entity_text: text,
+            audience_context: audienceCtx || `People who would evaluate: ${text.substring(0, 200)}`,
+          }),
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Segment suggestion timed out after 60s')), 60000)),
+      ]);
+      if (!segResp.ok) {
+        const err = await segResp.json().catch(() => ({}));
+        throw new Error(err.detail || `Server error ${segResp.status}`);
+      }
+      const segData = await segResp.json();
+      segments = segData.segments || [];
+    } catch (e) {
+      logStep(`Segment suggestion failed: ${e.message} — using defaults`, 'err');
+      segments = [
+        {label: 'Primary audience', count: Math.ceil(panelSize / 3)},
+        {label: 'Adjacent audience', count: Math.ceil(panelSize / 3)},
+        {label: 'Skeptical perspective', count: Math.ceil(panelSize / 3)},
+      ];
+    }
 
     // Scale segment counts to match requested panel size
     const totalSuggested = segments.reduce((a, s) => a + (s.count || 8), 0);
@@ -850,7 +884,7 @@ async function runFullPipeline() {
     document.getElementById('pipelineProgressBar').style.width = '20%';
 
     // Phase 3: Generate cohort
-    document.getElementById('pipelineProgressText').textContent = 'Building your panel...';
+    document.getElementById('pipelineProgressText').textContent = 'Building your panel (this takes 30-60s)...';
     logStep('Building panel members for each segment...');
 
     const desc = audienceCtx || `People evaluating: ${text.substring(0, 200)}`;
@@ -859,6 +893,10 @@ async function runFullPipeline() {
       headers: llmHeaders(),
       body: JSON.stringify({description: desc, audience_context: audienceCtx, segments, parallel: 3}),
     });
+    if (!cohortResp.ok) {
+      const err = await cohortResp.json().catch(() => ({}));
+      throw new Error(`Failed to build panel: ${err.detail || cohortResp.status}`);
+    }
     const cohortData = await cohortResp.json();
 
     // Upload cohort to our session
@@ -939,6 +977,8 @@ async function runFullPipeline() {
     logStep(`Error: ${e.message}`, 'err');
   } finally {
     btn.disabled = false;
+    clearInterval(timerInterval);
+    document.getElementById('pipelineProgressBar').classList.remove('pulsing');
   }
 }
 
