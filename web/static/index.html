@@ -385,6 +385,9 @@
       <span class="template-chip" onclick="loadTemplate('product')">Product</span>
       <span class="template-chip" onclick="loadTemplate('resume')">Resume</span>
       <span class="template-chip" onclick="loadTemplate('pitch')">Pitch</span>
+      <span class="template-chip" onclick="loadTemplate('policy')">Policy</span>
+      <span class="template-chip" onclick="loadTemplate('listing')">Listing</span>
+      <span class="template-chip" onclick="loadTemplate('blog')">Blog Post</span>
     </div>
 
     <div class="field">
@@ -539,63 +542,177 @@
 
 <script>
 const TEMPLATES = {
-  product: `# [Product Name]
+  product: `# Beacon — Infrastructure Monitoring for Growing Teams
 
 ## One-liner
-<!-- What it does in one sentence -->
+Beacon watches your servers, databases, and APIs so your on-call engineer doesn't have to stare at dashboards at 3am.
 
 ## Key features
-- Feature 1
-- Feature 2
-- Feature 3
+- Anomaly detection that learns your traffic patterns — no manual threshold tuning
+- Incident timelines that auto-correlate logs, metrics, and deploys
+- PagerDuty, Slack, and Opsgenie integrations out of the box
+- 5-minute setup: one-line agent install, auto-discovers services
 
 ## Pricing
-<!-- Tiers, free plan, usage-based, etc. -->
+- Starter: $49/mo — 10 hosts, 7-day retention, email alerts
+- Team: $149/mo — 50 hosts, 30-day retention, all integrations
+- Enterprise: Custom — unlimited hosts, SSO, SLA, dedicated support
 
 ## Trust signals
-<!-- SOC2, customer count, funding, team size, etc. -->
+- Used by 820 engineering teams
+- 99.97% uptime over the past 12 months
+- SOC 2 Type II certified
+- Founded by ex-Datadog and ex-AWS engineers
 
 ## Target user
-<!-- Who is this for? -->
+Engineering teams of 5-50 who've outgrown free tools but don't need (or want to pay for) enterprise observability platforms.
 
 ## What's NOT included
-<!-- Known limitations, missing features, roadmap items -->`,
-  resume: `# [Your Name]
+- No APM / distributed tracing (planned Q4)
+- No log management (we integrate with your existing log provider)
+- No free tier
+- No on-premise deployment option`,
+
+  resume: `# Jordan Nakamura
 
 ## Target role
-<!-- What position you're applying for -->
+Senior Product Manager — B2B SaaS, growth stage
 
 ## Summary
-<!-- 2-3 sentence professional summary -->
+Product manager with 7 years of experience shipping B2B tools that grow revenue. Led the payments platform at Brex from $2M to $18M ARR. I care about talking to users, shipping fast, and measuring what matters.
 
 ## Experience
-- **[Company]** — [Role] (dates)
-  Key achievements...
+- **Brex** — Senior Product Manager (2021–2025)
+  Owned the payments platform. Launched instant payouts (drove 34% activation lift), redesigned onboarding (cut time-to-value from 14 days to 3), and ran pricing experiments that increased ARPU 22%.
+
+- **Figma** — Product Manager (2019–2021)
+  Shipped the plugin marketplace and developer API. Grew plugin ecosystem from 200 to 4,000+ plugins. Managed 2 engineers and 1 designer.
+
+- **Deloitte Digital** — Business Analyst (2017–2019)
+  Client-facing consulting for Fortune 500 digital transformations. Led requirements gathering and stakeholder alignment for a $4M CRM migration.
 
 ## Education
-- [Degree], [School], [Year]
+- MBA, Kellogg School of Management, 2021
+- BS Computer Science, UC San Diego, 2017
 
 ## Skills
-- Skill 1, Skill 2, Skill 3`,
-  pitch: `# [Company Name]
+- Product strategy, A/B testing, SQL, user research, pricing
+- Tools: Amplitude, Mixpanel, Linear, Figma, dbt`,
+
+  pitch: `# Archway — AI Compliance for Regulated Industries
 
 ## Problem
-<!-- What pain point do you solve? -->
+Financial services firms spend $12B/year on compliance staff manually reviewing documents, flagging risks, and filing reports. A single missed filing costs $50K-$5M in fines. The work is repetitive, error-prone, and doesn't scale.
 
 ## Solution
-<!-- Your product/approach in 2-3 sentences -->
+Archway uses LLMs fine-tuned on regulatory filings to automate compliance review. Upload a document, get a risk assessment in seconds with citations to specific regulations. Integrates with existing GRC platforms.
 
 ## Market
-<!-- TAM/SAM/SOM or market description -->
+- TAM: $28B (global RegTech)
+- SAM: $4.2B (US financial services compliance automation)
+- SOM: $180M (mid-market banks and fintech, our beachhead)
 
 ## Traction
-<!-- Revenue, users, growth rate -->
+- $840K ARR, growing 28% month-over-month
+- 14 paying customers (3 banks, 11 fintech companies)
+- 92% gross retention, 118% net retention
+- Processing 45,000 documents/month
 
 ## Team
-<!-- Key founders and their backgrounds -->
+- **Maya Torres** (CEO) — 10 years at Goldman Sachs compliance, built their internal ML screening tool
+- **Raj Patel** (CTO) — Former Palantir, led NLP team. Published 8 papers on document understanding
+- **Lisa Chang** (Head of Sales) — Scaled Plaid's financial services GTM from $5M to $40M
 
 ## Ask
-<!-- Funding amount and use of funds -->`
+Raising $6M Series A to hire 5 engineers, 3 enterprise sales reps, and expand to insurance vertical.`,
+
+  policy: `# Proposed Remote Work Policy — Meridian Technologies
+
+## Summary
+Effective Q3, Meridian Technologies will transition from a hybrid (3 days in-office) model to a flexible-first policy where employees choose their work location, with 4 required in-person days per month for team collaboration.
+
+## Key Changes
+- No default in-office days. Employees choose where to work daily.
+- 4 "collaboration days" per month — the team picks the dates together
+- $1,500/year home office stipend for all remote-eligible employees
+- Core hours: 10am-3pm local time (for meetings and availability)
+- Managers cannot require in-office presence beyond the 4 collaboration days
+
+## Who This Affects
+- All full-time employees in engineering, product, design, marketing, and operations (approx. 340 people)
+- Customer support and facilities teams remain on existing schedules
+- New hires in their first 90 days will have 8 collaboration days/month
+
+## What We Expect
+- Maintained or improved sprint velocity and shipping cadence
+- Employee satisfaction scores above 7.5/10 on quarterly surveys
+- No degradation in cross-team collaboration metrics
+
+## What We're NOT Changing
+- Compensation bands remain location-based
+- Performance review criteria unchanged
+- Existing PTO and benefits policies unchanged`,
+
+  listing: `# Sunny 2BR Condo in Logan Square — $1,850/mo
+
+Prime location on Milwaukee Ave, 2 blocks from the Blue Line. This updated 2-bedroom, 1-bath unit features hardwood floors throughout, in-unit washer/dryer, and a private balcony overlooking a tree-lined street.
+
+## Unit Details
+- 2 bedrooms, 1 bathroom, ~950 sq ft
+- 3rd floor of a walk-up (no elevator)
+- In-unit washer/dryer
+- Central AC and gas heat
+- Updated kitchen with dishwasher, gas stove, granite counters
+- Private south-facing balcony
+- One parking spot included ($75 value)
+
+## Building & Neighborhood
+- 6-unit building, quiet and well-maintained
+- 2-minute walk to Logan Square Blue Line
+- Walkable to Longman & Eagle, Lost Lake, Gaslight Coffee
+- Whole Foods 4 blocks north
+
+## Lease Terms
+- 12-month lease, available August 1
+- $1,850/month, $1,850 security deposit
+- Pets allowed (dogs under 40 lbs, $250 pet deposit)
+- Credit check and proof of income required (2.5x rent)
+
+## What's NOT included
+- Utilities (electric, gas, internet) — tenant responsibility
+- Storage unit — available for $50/mo
+- No doorman or package room`,
+
+  blog: `# Why We Stopped Doing Sprint Planning
+
+After 3 years of two-week sprints, our team of 8 engineers quietly stopped doing sprint planning. Here's what happened and what we do instead.
+
+## The Problem
+
+Sprint planning took 2 hours every other Monday. We'd estimate stories, negotiate scope, and commit to a sprint goal. Then reality would hit: a production incident on Tuesday, a customer escalation on Wednesday, a "quick favor" from the CEO on Thursday.
+
+By Friday, the sprint backlog was fiction. We'd hit maybe 60% of our committed stories, feel bad about it, and repeat.
+
+The problem wasn't discipline. It was that our planning horizon didn't match our reality. Two weeks is too long when your priorities shift daily.
+
+## What We Do Instead
+
+**Daily priorities, weekly themes.** Each Monday, the team picks a theme for the week — usually one large initiative or problem area. Each morning in standup, people pull from a prioritized backlog. No commitments, no estimates, no sprint goals.
+
+**Ship when ready.** We deploy 3-4 times per day. There's no "end of sprint" release. Features go out when they're done, behind feature flags.
+
+**Weekly retro, not sprint review.** Every Friday we ask: what shipped this week? What blocked us? What should we do differently? No velocity charts. No burndown.
+
+## Results After 6 Months
+
+- Deploy frequency: 2x/sprint → 15x/week
+- Engineer satisfaction (internal survey): 6.2 → 8.1
+- Customer-reported bugs: down 40%
+- Time spent in planning meetings: 4 hrs/month → 30 min/month
+
+## The Catch
+
+This only works because we have a strong product manager who keeps the backlog prioritized and a team that communicates well async. If your team struggles with alignment, removing sprint structure might make things worse, not better.`
 };
 
 let sessionId = null;
