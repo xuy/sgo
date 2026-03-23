@@ -776,9 +776,13 @@ async function inferSpec() {
 
   if (goalField.value.trim() && audienceField.value.trim()) return;
 
-  // Show loading state
+  // Show loading state with elapsed timer
   const btns = document.querySelectorAll('#step1 button.secondary');
-  btns.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Thinking...'; });
+  btns.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; });
+  let elapsed = 0;
+  const tick = () => { elapsed++; btns.forEach(b => { b.textContent = `Thinking (${elapsed}s)`; }); };
+  tick();
+  const timer = setInterval(tick, 1000);
   if (!goalField.value.trim()) goalField.placeholder = 'Thinking...';
   if (!audienceField.value.trim()) audienceField.placeholder = 'Thinking...';
 
@@ -794,6 +798,7 @@ async function inferSpec() {
   } catch (e) {
     // Restore placeholders on failure
   } finally {
+    clearInterval(timer);
     btns.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || 'Auto-fill'; });
     if (!goalField.value.trim()) goalField.placeholder = "e.g. 'Increase conversion rate' or 'Get more interview callbacks'";
     if (!audienceField.value.trim()) audienceField.placeholder = "e.g. 'Engineering managers at mid-stage startups' or 'US consumers aged 25-45'";
