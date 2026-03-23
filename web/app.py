@@ -132,6 +132,11 @@ def get_model(model=None):
     return model or os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
 
 
+def get_fast_model():
+    """Smaller model for cheap setup calls (infer-spec, segments, filters, changes)."""
+    return os.getenv("LLM_FAST_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+
+
 IS_SPACES = bool(os.getenv("SPACE_ID"))
 
 
@@ -329,7 +334,8 @@ class InferSpecInput(BaseModel):
 async def infer_spec(input: InferSpecInput, request: Request):
     """Infer goal and audience from entity text."""
     log.info(f"Infer spec ({request.client.host})")
-    client, model = llm_from_request(request)
+    client, _ = llm_from_request(request)
+    model = get_fast_model()
 
     prompt = f"""Read this entity and infer two things:
 1. What is the most likely GOAL the author has? (what outcome they want)
@@ -371,7 +377,8 @@ Be specific to THIS entity, not generic."""
 async def suggest_changes(input: SuggestChangesInput, request: Request):
     """Generate candidate changes from evaluation concerns and goal."""
     log.info(f"Suggest changes ({len(input.concerns)} concerns)")
-    client, model = llm_from_request(request)
+    client, _ = llm_from_request(request)
+    model = get_fast_model()
 
     concerns_text = "\n".join(f"- {c}" for c in input.concerns[:15])
     prompt = f"""Based on these evaluation results, suggest 3-5 specific, actionable changes.
@@ -414,7 +421,8 @@ Return JSON:
 async def suggest_segments(input: SuggestSegmentsInput, request: Request):
     """Use LLM to suggest audience segments based on entity and context."""
     log.info("Suggest segments")
-    client, model = llm_from_request(request)
+    client, _ = llm_from_request(request)
+    model = get_fast_model()
 
     prompt = f"""Given this entity and audience context, suggest 4-5 evaluator segments.
 Each segment should represent a distinct perspective that would evaluate this entity differently.
@@ -510,7 +518,7 @@ async def generate_cohort_endpoint(config: CohortConfig, request: Request):
 
         # Extract structured filters from audience context
         client, model = llm_from_request(request)
-        filters = extract_filters(client, model, config.audience_context, config.description)
+        filters = extract_filters(client, get_fast_model(), config.audience_context, config.description)
         print(f"Nemotron filters from audience context: {filters}")
 
         filtered = pl.filter_personas(ds, filters, limit=max(total * 20, 2000))
