@@ -594,6 +594,28 @@ const TEMPLATES = {
 let sessionId = null;
 let evalResultsData = null;
 
+// LLM credentials — stored only in browser JS memory, never persisted
+let llmApiKey = '';
+let llmBaseUrl = '';
+let llmModel = '';
+
+function llmHeaders() {
+  return {'Content-Type': 'application/json', 'X-LLM-Key': llmApiKey, 'X-LLM-Base': llmBaseUrl, 'X-LLM-Model': llmModel};
+}
+
+function llmQueryParams() {
+  const p = new URLSearchParams();
+  if (llmApiKey) p.set('api_key', llmApiKey);
+  if (llmBaseUrl) p.set('base_url', llmBaseUrl);
+  if (llmModel) p.set('model', llmModel);
+  return p;
+}
+
+function apiUrl(path) {
+  const q = llmQueryParams().toString();
+  return q ? `${path}?${q}` : path;
+}
+
 // XSS sanitization helper
 function esc(str) {
   if (str == null) return '';
@@ -640,27 +662,17 @@ async function init() {
   // Changes are auto-generated from evaluation concerns
 }
 
-async function saveApiKey() {
+function saveApiKey() {
   const key = document.getElementById('apiKeyInput').value.trim();
   if (!key) return alert('Enter your API key.');
-  const baseUrl = document.getElementById('apiBaseUrl').value.trim();
-  const model = document.getElementById('apiModel').value.trim();
 
-  try {
-    const resp = await fetch('/api/config/api-key', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({api_key: key, base_url: baseUrl, model: model}),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.detail || 'Failed');
+  llmApiKey = key;
+  llmBaseUrl = document.getElementById('apiBaseUrl').value.trim();
+  llmModel = document.getElementById('apiModel').value.trim() || 'openai/gpt-4o-mini';
 
-    document.getElementById('configBadge').textContent = data.model;
-    document.getElementById('configBadge').className = 'config-badge ok';
-    document.getElementById('apiKeySetup').classList.add('hidden');
-  } catch (e) {
-    alert('Failed to set API key: ' + e.message);
-  }
+  document.getElementById('configBadge').textContent = llmModel;
+  document.getElementById('configBadge').className = 'config-badge ok';
+  document.getElementById('apiKeySetup').classList.add('hidden');
 }
 
 async function setupNemotron() {
@@ -762,7 +774,7 @@ async function inferSpec() {
   if (goalField.value.trim() && audienceField.value.trim()) return;
 
   try {
-    const resp = await fetch('/api/infer-spec', {
+    const resp = await fetch(apiUrl('/api/infer-spec'), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({entity_text: text}),
@@ -820,7 +832,7 @@ async function runFullPipeline() {
     document.getElementById('pipelineProgressBar').style.width = '10%';
     logStep('Choosing the right panel segments...');
 
-    const segResp = await fetch('/api/suggest-segments', {
+    const segResp = await fetch(apiUrl('/api/suggest-segments'), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -845,7 +857,7 @@ async function runFullPipeline() {
     logStep('Building panel members for each segment...');
 
     const desc = audienceCtx || `People evaluating: ${text.substring(0, 200)}`;
-    const cohortResp = await fetch('/api/cohort/generate', {
+    const cohortResp = await fetch(apiUrl('/api/cohort/generate'), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({description: desc, audience_context: audienceCtx, segments, parallel: 3}),
@@ -882,6 +894,7 @@ async function runFullPipeline() {
 
     await new Promise((resolve, reject) => {
       const params = new URLSearchParams({parallel: 5, bias_calibration: biasCal});
+      llmQueryParams().forEach((v, k) => params.set(k, v));
       const es = new EventSource(`/api/evaluate/stream/${sessionId}?${params}`);
 
       es.addEventListener('start', (e) => {
@@ -974,7 +987,7 @@ async function runDirections() {
 
     // Phase 2: LLM generates candidate changes from concerns
     document.getElementById('cfProgressText').textContent = 'Proposing changes to test...';
-    const suggestResp = await fetch('/api/suggest-changes', {
+    const suggestResp = await fetch(apiUrl('/api/suggest-changes'), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({entity_text: entityText, goal, concerns}),
@@ -1006,7 +1019,9 @@ async function runDirections() {
     const {ticket} = await prepResp.json();
 
     await new Promise((resolve, reject) => {
-      const es = new EventSource(`/api/counterfactual/stream/${sessionId}?ticket=${ticket}`);
+      const cfParams = new URLSearchParams({ticket});
+      llmQueryParams().forEach((v, k) => cfParams.set(k, v));
+      const es = new EventSource(`/api/counterfactual/stream/${sessionId}?${cfParams}`);
 
       es.addEventListener('start', (e) => {
         const d = JSON.parse(e.data);

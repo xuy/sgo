@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -113,23 +113,45 @@ def get_nemotron(data_dir=None):
     return None
 
 
-# Per-user API key override (for hosted/Spaces mode)
-_user_llm_config: dict = {}  # session-scoped, not persistent
+# LLM client — uses per-request headers or server env vars. Never stored.
 
-
-def get_client(api_key_override=None):
-    key = api_key_override or _user_llm_config.get("api_key") or os.getenv("LLM_API_KEY")
-    base = _user_llm_config.get("base_url") or os.getenv("LLM_BASE_URL")
+def get_client(api_key=None, base_url=None):
+    key = api_key or os.getenv("LLM_API_KEY")
+    base = base_url or os.getenv("LLM_BASE_URL")
     if not key:
         raise HTTPException(400, "No API key configured. Enter your key above.")
     return OpenAI(api_key=key, base_url=base)
 
 
-def get_model():
-    return _user_llm_config.get("model") or os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
+def get_model(model=None):
+    return model or os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
 
 
 IS_SPACES = bool(os.getenv("SPACE_ID"))
+
+
+def _llm_from_params(api_key: str = "", base_url: str = "", model: str = ""):
+    """Extract LLM config from params. Falls back to env vars. Never stored."""
+    return (
+        get_client(api_key=api_key or None, base_url=base_url or None),
+        get_model(model=model or None),
+    )
+
+
+@app.middleware("http")
+async def inject_llm_config(request: Request, call_next):
+    """Make LLM creds available from query params on any request."""
+    request.state.api_key = request.query_params.get("api_key", "")
+    request.state.base_url = request.query_params.get("base_url", "")
+    request.state.model = request.query_params.get("model", "")
+    return await call_next(request)
+
+
+def llm_from_request(request: Request):
+    """Get LLM client+model from the current request's query params."""
+    return _llm_from_params(
+        request.state.api_key, request.state.base_url, request.state.model
+    )
 
 NEMOTRON_DATASETS = {
     "USA": "nvidia/Nemotron-Personas-USA",
@@ -179,37 +201,21 @@ async def index():
     return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 
-class SetApiKeyInput(BaseModel):
-    api_key: str
-    base_url: str = ""
-    model: str = ""
-
-
 @app.get("/api/config")
 async def get_config():
     """Return current LLM config and Nemotron status."""
     nem_path = find_nemotron_path()
-    has_key = bool(_user_llm_config.get("api_key") or os.getenv("LLM_API_KEY"))
+    has_key = bool(os.getenv("LLM_API_KEY"))  # server-level key only; per-session keys checked client-side
     return {
         "model": get_model(),
         "has_api_key": has_key,
-        "base_url": _user_llm_config.get("base_url") or os.getenv("LLM_BASE_URL", ""),
+        "base_url": os.getenv("LLM_BASE_URL", ""),
         "nemotron_path": str(nem_path) if nem_path else None,
         "nemotron_available": nem_path is not None,
         "is_spaces": IS_SPACES,
         "persona_datasets": list(NEMOTRON_DATASETS.keys()),
     }
 
-
-@app.post("/api/config/api-key")
-async def set_api_key(input: SetApiKeyInput):
-    """Set LLM API key from the UI (for hosted/Spaces mode)."""
-    _user_llm_config["api_key"] = input.api_key
-    if input.base_url:
-        _user_llm_config["base_url"] = input.base_url
-    if input.model:
-        _user_llm_config["model"] = input.model
-    return {"ok": True, "model": get_model()}
 
 
 class SuggestChangesInput(BaseModel):
@@ -285,10 +291,9 @@ class InferSpecInput(BaseModel):
 
 
 @app.post("/api/infer-spec")
-async def infer_spec(input: InferSpecInput):
+async def infer_spec(input: InferSpecInput, request: Request):
     """Infer goal and audience from entity text."""
-    client = get_client()
-    model = get_model()
+    client, model = llm_from_request(request)
 
     prompt = f"""Read this entity and infer two things:
 1. What is the most likely GOAL the author has? (what outcome they want)
@@ -327,10 +332,9 @@ Be specific to THIS entity, not generic."""
 
 
 @app.post("/api/suggest-changes")
-async def suggest_changes(input: SuggestChangesInput):
+async def suggest_changes(input: SuggestChangesInput, request: Request):
     """Generate candidate changes from evaluation concerns and goal."""
-    client = get_client()
-    model = get_model()
+    client, model = llm_from_request(request)
 
     concerns_text = "\n".join(f"- {c}" for c in input.concerns[:15])
     prompt = f"""Based on these evaluation results, suggest 3-5 specific, actionable changes.
@@ -370,10 +374,9 @@ Return JSON:
 
 
 @app.post("/api/suggest-segments")
-async def suggest_segments(input: SuggestSegmentsInput):
+async def suggest_segments(input: SuggestSegmentsInput, request: Request):
     """Use LLM to suggest audience segments based on entity and context."""
-    client = get_client()
-    model = get_model()
+    client, model = llm_from_request(request)
 
     prompt = f"""Given this entity and audience context, suggest 4-5 evaluator segments.
 Each segment should represent a distinct perspective that would evaluate this entity differently.
@@ -455,7 +458,7 @@ If nothing specific is stated, return {{}}."""
 
 
 @app.post("/api/cohort/generate")
-async def generate_cohort_endpoint(config: CohortConfig):
+async def generate_cohort_endpoint(config: CohortConfig, request: Request):
     """Generate a cohort — from Nemotron if available, else LLM-generated."""
     total = sum(s.get("count", 8) for s in config.segments)
 
@@ -467,8 +470,7 @@ async def generate_cohort_endpoint(config: CohortConfig):
         ss = _lazy_stratified_sampler()
 
         # Extract structured filters from audience context
-        client = get_client()
-        model = get_model()
+        client, model = llm_from_request(request)
         filters = extract_filters(client, model, config.audience_context, config.description)
         print(f"Nemotron filters from audience context: {filters}")
 
@@ -491,8 +493,7 @@ async def generate_cohort_endpoint(config: CohortConfig):
         source = "nemotron"
     else:
         # Fallback: LLM-generated
-        client = get_client()
-        model = get_model()
+        client, model = llm_from_request(request)
         all_personas = []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=config.parallel) as pool:
@@ -527,7 +528,8 @@ async def upload_cohort(sid: str, cohort: list[dict]):
 # ── SSE streaming endpoints ──────────────────────────────────────────────
 
 @app.get("/api/evaluate/stream/{sid}")
-async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = False):
+async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = False,
+                          api_key: str = "", base_url: str = "", model: str = ""):
     """Run evaluation with Server-Sent Events for real-time progress."""
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
@@ -536,15 +538,14 @@ async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = 
         raise HTTPException(400, "No cohort — generate or upload one first")
 
     async def event_generator():
-        client = get_client()
-        model = get_model()
+        client, mdl = _llm_from_params(api_key, base_url, model)
         cohort = session["cohort"]
         entity_text = session["entity_text"]
         total = len(cohort)
         sys_prompt = SYSTEM_PROMPT + BIAS_CALIBRATION_ADDENDUM if bias_calibration else None
 
         yield {"event": "start", "data": json.dumps({
-            "total": total, "model": model,
+            "total": total, "model": mdl,
             "bias_calibration": bias_calibration,
         })}
 
@@ -553,7 +554,7 @@ async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = 
         t0 = time.time()
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
             futs = {
-                pool.submit(evaluate_one, client, model, ev, entity_text,
+                pool.submit(evaluate_one, client, mdl, ev, entity_text,
                             system_prompt=sys_prompt): i
                 for i, ev in enumerate(cohort)
             }
@@ -629,7 +630,8 @@ async def prepare_counterfactual(sid: str, req: CounterfactualRequest):
 
 
 @app.get("/api/counterfactual/stream/{sid}")
-async def counterfactual_stream(sid: str, ticket: str):
+async def counterfactual_stream(sid: str, ticket: str,
+                                api_key: str = "", base_url: str = "", model: str = ""):
     """Run counterfactual probes with SSE progress."""
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
@@ -650,8 +652,7 @@ async def counterfactual_stream(sid: str, ticket: str):
     parallel = req.parallel
 
     async def event_generator():
-        client = get_client()
-        model = get_model()
+        client, mdl = _llm_from_params(api_key, base_url, model)
         cohort = session["cohort"]
         eval_results = session["eval_results"]
         cohort_map = {f"{p.get('name','')}_{p.get('user_id','')}": p for p in cohort}
@@ -662,7 +663,7 @@ async def counterfactual_stream(sid: str, ticket: str):
         total = len(movable)
         has_goal = bool(goal.strip())
         yield {"event": "start", "data": json.dumps({
-            "total": total, "changes": len(all_changes), "model": model,
+            "total": total, "changes": len(all_changes), "model": mdl,
             "goal": goal if has_goal else None,
         })}
 
@@ -681,7 +682,7 @@ async def counterfactual_stream(sid: str, ticket: str):
                 "status": "computing", "message": "Scoring evaluator relevance to goal..."
             })}
             goal_weights = compute_goal_weights(
-                client, model, eval_results, cohort_map, goal, parallel=parallel,
+                client, mdl, eval_results, cohort_map, goal, parallel=parallel,
             )
             relevant = sum(1 for v in goal_weights.values() if v["weight"] >= 0.5)
             yield {"event": "goal_weights", "data": json.dumps({
@@ -697,7 +698,7 @@ async def counterfactual_stream(sid: str, ticket: str):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
             futs = {
-                pool.submit(probe_one, client, model, r, cohort_map, all_changes): i
+                pool.submit(probe_one, client, mdl, r, cohort_map, all_changes): i
                 for i, r in enumerate(movable)
             }
             for fut in concurrent.futures.as_completed(futs):
@@ -742,7 +743,8 @@ async def counterfactual_stream(sid: str, ticket: str):
 @app.get("/api/bias-audit/stream/{sid}")
 async def bias_audit_stream(
     sid: str, probes: str = "framing,authority,order",
-    sample: int = 10, parallel: int = 5
+    sample: int = 10, parallel: int = 5,
+    api_key: str = "", base_url: str = "", model: str = ""
 ):
     """Run bias audit probes with SSE progress."""
     if sid not in sessions:
@@ -755,8 +757,7 @@ async def bias_audit_stream(
 
     async def event_generator():
         import random
-        client = get_client()
-        model = get_model()
+        client, mdl = _llm_from_params(api_key, base_url, model)
         cohort = session["cohort"]
         entity_text = session["entity_text"]
 
@@ -766,7 +767,7 @@ async def bias_audit_stream(
         yield {"event": "start", "data": json.dumps({
             "probes": probe_list,
             "sample_size": len(evaluators),
-            "model": model,
+            "model": mdl,
         })}
 
         all_analyses = []
@@ -811,7 +812,7 @@ async def bias_audit_stream(
                 "analysis": analysis,
             })}
 
-        report = generate_report(all_analyses, model)
+        report = generate_report(all_analyses, mdl)
         session["bias_audit"] = {"analyses": all_analyses, "report": report}
 
         yield {"event": "complete", "data": json.dumps({
