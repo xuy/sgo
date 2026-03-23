@@ -760,11 +760,13 @@ async function init() {
   if (cfg.has_api_key) {
     badge.textContent = cfg.model;
     badge.className = 'config-badge ok';
-    document.getElementById('apiKeySetup').classList.add('hidden');
-  } else {
+  } else if (!cfg.is_spaces) {
     badge.textContent = 'No API key';
     badge.className = 'config-badge warn';
     document.getElementById('apiKeySetup').classList.remove('hidden');
+  } else {
+    badge.textContent = 'No API key configured';
+    badge.className = 'config-badge warn';
   }
 
   const nemBadge = document.getElementById('nemotronBadge');
