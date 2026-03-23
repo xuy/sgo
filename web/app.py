@@ -169,18 +169,10 @@ def _check_rate_limit(ip: str):
 
 @app.middleware("http")
 async def inject_llm_config(request: Request, call_next):
-    """Read LLM creds from Authorization header (not query params — those get logged)."""
-    # Authorization: Bearer <api_key>|<base_url>|<model>  (pipe-separated)
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer "):
-        parts = auth[7:].split("|", 2)
-        request.state.api_key = parts[0] if len(parts) > 0 else ""
-        request.state.base_url = parts[1] if len(parts) > 1 else ""
-        request.state.model = parts[2] if len(parts) > 2 else ""
-    else:
-        request.state.api_key = ""
-        request.state.base_url = ""
-        request.state.model = ""
+    """Read LLM creds from custom headers (not Authorization — HF proxy intercepts that)."""
+    request.state.api_key = request.headers.get("x-llm-key", "")
+    request.state.base_url = request.headers.get("x-llm-base", "")
+    request.state.model = request.headers.get("x-llm-model", "")
     return await call_next(request)
 
 

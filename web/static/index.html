@@ -724,10 +724,12 @@ let llmBaseUrl = '';
 let llmModel = '';
 
 function llmHeaders() {
-  // Send credentials via Authorization header (never in URL/query params)
+  // Send credentials via custom header (not Authorization — HF proxy intercepts that)
   const h = {'Content-Type': 'application/json'};
   if (llmApiKey) {
-    h['Authorization'] = `Bearer ${llmApiKey}|${llmBaseUrl}|${llmModel}`;
+    h['X-LLM-Key'] = llmApiKey;
+    if (llmBaseUrl) h['X-LLM-Base'] = llmBaseUrl;
+    if (llmModel) h['X-LLM-Model'] = llmModel;
   }
   return h;
 }
