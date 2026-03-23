@@ -62,48 +62,7 @@ def _lazy_stratified_sampler():
         _stratified_sampler = _ss
     return _stratified_sampler
 
-from contextlib import asynccontextmanager
-
-
-@asynccontextmanager
-async def lifespan(app):
-    """Restore saved sessions on startup."""
-    results_dir = PROJECT_ROOT / "results"
-    if results_dir.exists():
-        for d in results_dir.iterdir():
-            if not d.is_dir():
-                continue
-            raw = d / "raw_results.json"
-            cohort_file = d / "cohort.json"
-            meta_file = d / "meta.json"
-            if raw.exists() and cohort_file.exists():
-                try:
-                    with open(raw) as f:
-                        eval_results = json.load(f)
-                    with open(cohort_file) as f:
-                        cohort = json.load(f)
-                    entity_text = ""
-                    if meta_file.exists():
-                        with open(meta_file) as f:
-                            meta = json.load(f)
-                        entity_text = meta.get("entity", "")
-                    sid = d.name.replace("web_", "")
-                    sessions[sid] = {
-                        "id": sid,
-                        "entity_text": entity_text,
-                        "cohort": cohort,
-                        "eval_results": eval_results,
-                        "gradient": None,
-                        "created": "",
-                    }
-                    valid = [r for r in eval_results if isinstance(r, dict) and "score" in r]
-                    print(f"  Restored session {sid}: {len(valid)} results, {len(cohort)} cohort")
-                except Exception as e:
-                    print(f"  Failed to restore {d.name}: {e}")
-    yield
-
-
-app = FastAPI(title="SGO — Semantic Gradient Optimization", lifespan=lifespan)
+app = FastAPI(title="SGO — Semantic Gradient Optimization")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # In-memory store for active sessions
