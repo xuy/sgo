@@ -314,8 +314,8 @@
   <header>
     <h1>Semantic Gradient Optimization</h1>
     <p>Build a panel. See what they think. Test what to change next.</p>
-    <div id="configBadge" class="config-badge">checking...</div>
-    <div id="nemotronBadge" class="config-badge" style="margin-left:8px">checking...</div>
+    <div id="configBadge" class="config-badge" style="display:none"></div>
+    <div id="nemotronBadge" class="config-badge" style="display:none;margin-left:8px"></div>
   </header>
 
   <!-- API Key setup (shown if no key configured) -->
@@ -760,28 +760,29 @@ async function init() {
   if (cfg.has_api_key) {
     badge.textContent = cfg.model;
     badge.className = 'config-badge ok';
+    badge.style.display = '';
   } else if (!cfg.is_spaces) {
     badge.textContent = 'No API key';
     badge.className = 'config-badge warn';
+    badge.style.display = '';
     document.getElementById('apiKeySetup').classList.remove('hidden');
-  } else {
-    badge.textContent = 'No API key configured';
-    badge.className = 'config-badge warn';
   }
 
   const nemBadge = document.getElementById('nemotronBadge');
   if (cfg.nemotron_available) {
     nemBadge.textContent = 'Nemotron 1M';
     nemBadge.className = 'config-badge ok';
-  } else {
-    nemBadge.textContent = 'No persona dataset';
+    nemBadge.style.display = '';
+  } else if (!cfg.is_spaces) {
+    nemBadge.textContent = 'No panel data';
     nemBadge.className = 'config-badge warn';
+    nemBadge.style.display = '';
     document.getElementById('nemotronSetup').classList.remove('hidden');
     document.getElementById('nemotronPath').value = 'data/nemotron';
-    // Hide folder field on Spaces — users don't need to think about paths
-    if (cfg.is_spaces) {
-      document.getElementById('nemotronPathField').classList.add('hidden');
-    }
+  } else {
+    // On Spaces without data — show setup but hide folder field
+    document.getElementById('nemotronSetup').classList.remove('hidden');
+    document.getElementById('nemotronPathField').classList.add('hidden');
   }
 
   // Changes are auto-generated from evaluation concerns
