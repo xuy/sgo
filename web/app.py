@@ -78,6 +78,7 @@ _nemotron_ds = None
 _nemotron_checked = False
 
 NEMOTRON_SEARCH_PATHS = [
+    Path("/data/nemotron"),  # HF Spaces persistent storage
     PROJECT_ROOT / "data" / "nemotron",
     Path.home() / "data" / "nvidia" / "Nemotron-Personas-USA",
     Path.home() / "data" / "nemotron",
@@ -255,7 +256,7 @@ class SuggestChangesInput(BaseModel):
 
 
 class NemotronPathInput(BaseModel):
-    path: str = "data/nemotron"
+    path: str = "/data/nemotron" if IS_SPACES else "data/nemotron"
     dataset: str = "USA"
 
 
@@ -264,7 +265,7 @@ async def setup_nemotron(input: NemotronPathInput):
     """Point to existing data, or download a Nemotron dataset to the given path."""
     p = Path(input.path).expanduser().resolve()
     # Prevent path traversal — must be within project or /tmp
-    if not (p.is_relative_to(PROJECT_ROOT) or p.is_relative_to(Path("/tmp"))):
+    if not (p.is_relative_to(PROJECT_ROOT) or p.is_relative_to(Path("/tmp")) or p.is_relative_to(Path("/data"))):
         raise HTTPException(403, "Path must be within the project directory")
     hf_name = NEMOTRON_DATASETS.get(input.dataset, NEMOTRON_DATASETS["USA"])
 
