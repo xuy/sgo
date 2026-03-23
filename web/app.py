@@ -125,7 +125,7 @@ def get_client(api_key=None, base_url=None):
     base = base_url or os.getenv("LLM_BASE_URL")
     if not key:
         raise HTTPException(400, "No API key configured. Enter your key above.")
-    return OpenAI(api_key=key, base_url=base)
+    return OpenAI(api_key=key, base_url=base, timeout=45, max_retries=2)
 
 
 def get_model(model=None):
