@@ -1,9 +1,10 @@
 FROM python:3.11-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install dependencies
-COPY pyproject.toml .
 RUN pip install --no-cache-dir \
     "datasets>=4.0.0" \
     "huggingface_hub>=0.20.0" \

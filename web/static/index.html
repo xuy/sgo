@@ -317,7 +317,7 @@
       <div class="step-num" style="border-color:var(--yellow);color:var(--yellow)">!</div>
       <div class="step-title">Connect your LLM</div>
     </div>
-    <p class="step-desc">SGO works with any OpenAI-compatible API. Your key is used only for this session and is never stored, logged, or sent anywhere except directly to your chosen API endpoint.</p>
+    <p class="step-desc">SGO works with any OpenAI-compatible API. Your key stays in your browser and is sent to the server only via encrypted headers — never logged, stored, or visible in URLs.</p>
     <div class="field">
       <label>API key</label>
       <input type="password" id="apiKeyInput" placeholder="sk-...">
@@ -600,20 +600,17 @@ let llmBaseUrl = '';
 let llmModel = '';
 
 function llmHeaders() {
-  return {'Content-Type': 'application/json', 'X-LLM-Key': llmApiKey, 'X-LLM-Base': llmBaseUrl, 'X-LLM-Model': llmModel};
-}
-
-function llmQueryParams() {
-  const p = new URLSearchParams();
-  if (llmApiKey) p.set('api_key', llmApiKey);
-  if (llmBaseUrl) p.set('base_url', llmBaseUrl);
-  if (llmModel) p.set('model', llmModel);
-  return p;
+  // Send credentials via Authorization header (never in URL/query params)
+  const h = {'Content-Type': 'application/json'};
+  if (llmApiKey) {
+    h['Authorization'] = `Bearer ${llmApiKey}|${llmBaseUrl}|${llmModel}`;
+  }
+  return h;
 }
 
 function apiUrl(path) {
-  const q = llmQueryParams().toString();
-  return q ? `${path}?${q}` : path;
+  // No credentials in URLs — they get logged
+  return path;
 }
 
 // XSS sanitization helper
@@ -699,7 +696,7 @@ async function setupNemotron() {
   try {
     const resp = await fetch('/api/nemotron/setup', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify({path, dataset}),
     });
     clearInterval(progressInterval);
@@ -776,7 +773,7 @@ async function inferSpec() {
   try {
     const resp = await fetch(apiUrl('/api/infer-spec'), {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify({entity_text: text}),
     });
     const data = await resp.json();
@@ -820,7 +817,7 @@ async function runFullPipeline() {
     document.getElementById('pipelineProgressText').textContent = 'Setting up...';
     const sessResp = await fetch('/api/session', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify({entity_text: text}),
     });
     const sessData = await sessResp.json();
@@ -834,7 +831,7 @@ async function runFullPipeline() {
 
     const segResp = await fetch(apiUrl('/api/suggest-segments'), {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify({
         entity_text: text,
         audience_context: audienceCtx || `People who would evaluate: ${text.substring(0, 200)}`,
@@ -859,7 +856,7 @@ async function runFullPipeline() {
     const desc = audienceCtx || `People evaluating: ${text.substring(0, 200)}`;
     const cohortResp = await fetch(apiUrl('/api/cohort/generate'), {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify({description: desc, audience_context: audienceCtx, segments, parallel: 3}),
     });
     const cohortData = await cohortResp.json();
@@ -867,7 +864,7 @@ async function runFullPipeline() {
     // Upload cohort to our session
     await fetch(`/api/cohort/upload/${sessionId}`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify(cohortData.cohort),
     });
 
@@ -894,7 +891,6 @@ async function runFullPipeline() {
 
     await new Promise((resolve, reject) => {
       const params = new URLSearchParams({parallel: 5, bias_calibration: biasCal});
-      llmQueryParams().forEach((v, k) => params.set(k, v));
       const es = new EventSource(`/api/evaluate/stream/${sessionId}?${params}`);
 
       es.addEventListener('start', (e) => {
@@ -989,7 +985,7 @@ async function runDirections() {
     document.getElementById('cfProgressText').textContent = 'Proposing changes to test...';
     const suggestResp = await fetch(apiUrl('/api/suggest-changes'), {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify({entity_text: entityText, goal, concerns}),
     });
     const suggestData = await suggestResp.json();
@@ -1007,7 +1003,7 @@ async function runDirections() {
     // POST config first, get a ticket, then SSE with just the ticket
     const prepResp = await fetch(`/api/counterfactual/prepare/${sessionId}`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: llmHeaders(),
       body: JSON.stringify({
         changes: suggestedChanges,
         goal: goal,
@@ -1019,9 +1015,7 @@ async function runDirections() {
     const {ticket} = await prepResp.json();
 
     await new Promise((resolve, reject) => {
-      const cfParams = new URLSearchParams({ticket});
-      llmQueryParams().forEach((v, k) => cfParams.set(k, v));
-      const es = new EventSource(`/api/counterfactual/stream/${sessionId}?${cfParams}`);
+      const es = new EventSource(`/api/counterfactual/stream/${sessionId}?ticket=${ticket}`);
 
       es.addEventListener('start', (e) => {
         const d = JSON.parse(e.data);

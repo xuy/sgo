@@ -138,17 +138,43 @@ def _llm_from_params(api_key: str = "", base_url: str = "", model: str = ""):
     )
 
 
+# Rate limiting — per-IP request counter
+_rate_limits: dict = {}  # ip -> {"count": N, "reset": timestamp}
+RATE_LIMIT_MAX = 20  # LLM requests per window
+RATE_LIMIT_WINDOW = 3600  # 1 hour
+
+
+def _check_rate_limit(ip: str):
+    """Raise 429 if IP has exceeded rate limit."""
+    now = time.time()
+    entry = _rate_limits.get(ip)
+    if not entry or now > entry["reset"]:
+        _rate_limits[ip] = {"count": 1, "reset": now + RATE_LIMIT_WINDOW}
+        return
+    if entry["count"] >= RATE_LIMIT_MAX:
+        raise HTTPException(429, f"Rate limit exceeded. Try again in {int(entry['reset'] - now)}s.")
+    entry["count"] += 1
+
+
 @app.middleware("http")
 async def inject_llm_config(request: Request, call_next):
-    """Make LLM creds available from query params on any request."""
-    request.state.api_key = request.query_params.get("api_key", "")
-    request.state.base_url = request.query_params.get("base_url", "")
-    request.state.model = request.query_params.get("model", "")
+    """Read LLM creds from Authorization header (not query params — those get logged)."""
+    # Authorization: Bearer <api_key>|<base_url>|<model>  (pipe-separated)
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        parts = auth[7:].split("|", 2)
+        request.state.api_key = parts[0] if len(parts) > 0 else ""
+        request.state.base_url = parts[1] if len(parts) > 1 else ""
+        request.state.model = parts[2] if len(parts) > 2 else ""
+    else:
+        request.state.api_key = ""
+        request.state.base_url = ""
+        request.state.model = ""
     return await call_next(request)
 
 
 def llm_from_request(request: Request):
-    """Get LLM client+model from the current request's query params."""
+    """Get LLM client+model from the current request. Never logs credentials."""
     return _llm_from_params(
         request.state.api_key, request.state.base_url, request.state.model
     )
@@ -210,7 +236,6 @@ async def get_config():
         "model": get_model(),
         "has_api_key": has_key,
         "base_url": os.getenv("LLM_BASE_URL", ""),
-        "nemotron_path": str(nem_path) if nem_path else None,
         "nemotron_available": nem_path is not None,
         "is_spaces": IS_SPACES,
         "persona_datasets": list(NEMOTRON_DATASETS.keys()),
@@ -233,6 +258,9 @@ class NemotronPathInput(BaseModel):
 async def setup_nemotron(input: NemotronPathInput):
     """Point to existing data, or download a Nemotron dataset to the given path."""
     p = Path(input.path).expanduser().resolve()
+    # Prevent path traversal — must be within project or /tmp
+    if not (p.is_relative_to(PROJECT_ROOT) or p.is_relative_to(Path("/tmp"))):
+        raise HTTPException(403, "Path must be within the project directory")
     hf_name = NEMOTRON_DATASETS.get(input.dataset, NEMOTRON_DATASETS["USA"])
 
     if (p / "dataset_info.json").exists():
@@ -528,17 +556,25 @@ async def upload_cohort(sid: str, cohort: list[dict]):
 # ── SSE streaming endpoints ──────────────────────────────────────────────
 
 @app.get("/api/evaluate/stream/{sid}")
-async def evaluate_stream(sid: str, parallel: int = 5, bias_calibration: bool = False,
-                          api_key: str = "", base_url: str = "", model: str = ""):
+async def evaluate_stream(sid: str, request: Request, parallel: int = 5,
+                          bias_calibration: bool = False):
     """Run evaluation with Server-Sent Events for real-time progress."""
+    _check_rate_limit(request.client.host)
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
     session = sessions[sid]
     if not session["cohort"]:
         raise HTTPException(400, "No cohort — generate or upload one first")
+    # Cap parallel to prevent abuse
+    parallel = min(parallel, 10)
+
+    # Capture LLM config from request headers before entering async generator
+    _api_key = request.state.api_key
+    _base_url = request.state.base_url
+    _model = request.state.model
 
     async def event_generator():
-        client, mdl = _llm_from_params(api_key, base_url, model)
+        client, mdl = _llm_from_params(_api_key, _base_url, _model)
         cohort = session["cohort"]
         entity_text = session["entity_text"]
         total = len(cohort)
@@ -630,9 +666,9 @@ async def prepare_counterfactual(sid: str, req: CounterfactualRequest):
 
 
 @app.get("/api/counterfactual/stream/{sid}")
-async def counterfactual_stream(sid: str, ticket: str,
-                                api_key: str = "", base_url: str = "", model: str = ""):
+async def counterfactual_stream(sid: str, ticket: str, request: Request):
     """Run counterfactual probes with SSE progress."""
+    _check_rate_limit(request.client.host)
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
     session = sessions[sid]
@@ -651,8 +687,13 @@ async def counterfactual_stream(sid: str, ticket: str,
     max_score = req.max_score
     parallel = req.parallel
 
+    _api_key = request.state.api_key
+    _base_url = request.state.base_url
+    _model = request.state.model
+    parallel = min(req.parallel, 10)
+
     async def event_generator():
-        client, mdl = _llm_from_params(api_key, base_url, model)
+        client, mdl = _llm_from_params(_api_key, _base_url, _model)
         cohort = session["cohort"]
         eval_results = session["eval_results"]
         cohort_map = {f"{p.get('name','')}_{p.get('user_id','')}": p for p in cohort}
@@ -742,11 +783,12 @@ async def counterfactual_stream(sid: str, ticket: str,
 
 @app.get("/api/bias-audit/stream/{sid}")
 async def bias_audit_stream(
-    sid: str, probes: str = "framing,authority,order",
-    sample: int = 10, parallel: int = 5,
-    api_key: str = "", base_url: str = "", model: str = ""
+    sid: str, request: Request, probes: str = "framing,authority,order",
+    sample: int = 10, parallel: int = 5
 ):
     """Run bias audit probes with SSE progress."""
+    _check_rate_limit(request.client.host)
+    parallel = min(parallel, 10)
     if sid not in sessions:
         raise HTTPException(404, "Session not found")
     session = sessions[sid]
@@ -757,7 +799,10 @@ async def bias_audit_stream(
 
     async def event_generator():
         import random
-        client, mdl = _llm_from_params(api_key, base_url, model)
+        _api_key = request.state.api_key
+        _base_url = request.state.base_url
+        _model = request.state.model
+        client, mdl = _llm_from_params(_api_key, _base_url, _model)
         cohort = session["cohort"]
         entity_text = session["entity_text"]
 
@@ -880,4 +925,4 @@ if __name__ == "__main__":
     host = "0.0.0.0" if IS_SPACES else "127.0.0.1"
     print(f"\n  SGO Web Interface")
     print(f"  http://{host}:{port}\n")
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, access_log=False)
