@@ -140,7 +140,7 @@ def _llm_from_params(api_key: str = "", base_url: str = "", model: str = ""):
 
 # Rate limiting — per-IP pipeline run counter (not per LLM call)
 _rate_limits: dict = {}  # ip -> {"count": N, "reset": timestamp}
-RATE_LIMIT_MAX_RUNS = 10  # pipeline runs (evaluate, counterfactual, bias audit) per window
+RATE_LIMIT_MAX_RUNS = 2  # pipeline runs (evaluate, counterfactual, bias audit) per window
 RATE_LIMIT_WINDOW = 3600  # 1 hour
 
 
