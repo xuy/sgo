@@ -20,4 +20,6 @@ COPY . .
 # HF Spaces expects port 7860
 EXPOSE 7860
 
-CMD ["python", "web/app.py"]
+# Use exec form so Python receives SIGTERM directly and shuts down cleanly
+STOPSIGNAL SIGTERM
+CMD ["python", "-u", "web/app.py"]

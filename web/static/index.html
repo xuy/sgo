@@ -855,33 +855,20 @@ async function runFullPipeline() {
     document.getElementById('pipelineProgressBar').style.width = '10%';
     logStep('Asking LLM to choose panel segments...');
 
-    let segments;
-    try {
-      const segResp = await Promise.race([
-        fetch(apiUrl('/api/suggest-segments'), {
-          method: 'POST',
-          headers: llmHeaders(),
-          body: JSON.stringify({
-            entity_text: text,
-            audience_context: audienceCtx || `People who would evaluate: ${text.substring(0, 200)}`,
-          }),
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Segment suggestion timed out after 60s')), 60000)),
-      ]);
-      if (!segResp.ok) {
-        const err = await segResp.json().catch(() => ({}));
-        throw new Error(err.detail || `Server error ${segResp.status}`);
-      }
-      const segData = await segResp.json();
-      segments = segData.segments || [];
-    } catch (e) {
-      logStep(`Segment suggestion failed: ${e.message} — using defaults`, 'err');
-      segments = [
-        {label: 'Primary audience', count: Math.ceil(panelSize / 3)},
-        {label: 'Adjacent audience', count: Math.ceil(panelSize / 3)},
-        {label: 'Skeptical perspective', count: Math.ceil(panelSize / 3)},
-      ];
+    const segResp = await fetch(apiUrl('/api/suggest-segments'), {
+      method: 'POST',
+      headers: llmHeaders(),
+      body: JSON.stringify({
+        entity_text: text,
+        audience_context: audienceCtx || `People who would evaluate: ${text.substring(0, 200)}`,
+      }),
+    });
+    if (!segResp.ok) {
+      const err = await segResp.json().catch(() => ({}));
+      throw new Error(`Failed to choose segments: ${err.detail || segResp.status}`);
     }
+    const segData = await segResp.json();
+    const segments = segData.segments || [];
 
     // Scale segment counts to match requested panel size
     const totalSuggested = segments.reduce((a, s) => a + (s.count || 8), 0);

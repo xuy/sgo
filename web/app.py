@@ -885,23 +885,10 @@ async def get_results(sid: str):
 
 if __name__ == "__main__":
     import uvicorn
-    import socket
 
     port = int(os.getenv("PORT", "7860" if IS_SPACES else "8000"))
     host = "0.0.0.0" if IS_SPACES else "127.0.0.1"
 
-    # Kill any process holding the port (HF Spaces restarts can leave zombies)
-    if IS_SPACES:
-        import subprocess
-        subprocess.run(f"fuser -k {port}/tcp", shell=True, capture_output=True)
-
     print(f"\n  SGO Web Interface")
     print(f"  http://{host}:{port}\n")
-
-    config = uvicorn.Config(app, host=host, port=port, access_log=False)
-    server = uvicorn.Server(config)
-    # Enable SO_REUSEADDR so restarts don't fail on TIME_WAIT sockets
-    config.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    config.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    config.socket.bind((host, port))
-    server.run()
+    uvicorn.run(app, host=host, port=port, access_log=False)
