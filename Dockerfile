@@ -2,6 +2,8 @@ FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends git lsof wget && rm -rf /var/lib/apt/lists/*
 
+RUN useradd -m -u 1000 user
+ENV HOME=/home/user
 WORKDIR /app
 
 # Install dependencies
