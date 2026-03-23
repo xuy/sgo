@@ -769,13 +769,18 @@ function logStep(msg, cls = '') {
 
 async function inferSpec() {
   const text = document.getElementById('entityText').value.trim();
-  if (!text) return;
+  if (!text) return alert('Paste something to review first.');
 
   const goalField = document.getElementById('goalText');
   const audienceField = document.getElementById('cohortDesc');
 
-  // Only auto-fill if both are empty
   if (goalField.value.trim() && audienceField.value.trim()) return;
+
+  // Show loading state
+  const btns = document.querySelectorAll('#step1 button.secondary');
+  btns.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Thinking...'; });
+  if (!goalField.value.trim()) goalField.placeholder = 'Thinking...';
+  if (!audienceField.value.trim()) audienceField.placeholder = 'Thinking...';
 
   try {
     const resp = await fetch(apiUrl('/api/infer-spec'), {
@@ -787,7 +792,11 @@ async function inferSpec() {
     if (!goalField.value.trim() && data.goal) goalField.value = data.goal;
     if (!audienceField.value.trim() && data.audience) audienceField.value = data.audience;
   } catch (e) {
-    // Silent fail — user can fill in manually
+    // Restore placeholders on failure
+  } finally {
+    btns.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || 'Auto-fill'; });
+    if (!goalField.value.trim()) goalField.placeholder = "e.g. 'Increase conversion rate' or 'Get more interview callbacks'";
+    if (!audienceField.value.trim()) audienceField.placeholder = "e.g. 'Engineering managers at mid-stage startups' or 'US consumers aged 25-45'";
   }
 }
 
