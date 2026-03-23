@@ -138,21 +138,22 @@ def _llm_from_params(api_key: str = "", base_url: str = "", model: str = ""):
     )
 
 
-# Rate limiting — per-IP request counter
+# Rate limiting — per-IP pipeline run counter (not per LLM call)
 _rate_limits: dict = {}  # ip -> {"count": N, "reset": timestamp}
-RATE_LIMIT_MAX = 20  # LLM requests per window
+RATE_LIMIT_MAX_RUNS = 10  # pipeline runs (evaluate, counterfactual, bias audit) per window
 RATE_LIMIT_WINDOW = 3600  # 1 hour
 
 
 def _check_rate_limit(ip: str):
-    """Raise 429 if IP has exceeded rate limit."""
+    """Raise 429 if IP has exceeded pipeline run limit."""
     now = time.time()
     entry = _rate_limits.get(ip)
     if not entry or now > entry["reset"]:
         _rate_limits[ip] = {"count": 1, "reset": now + RATE_LIMIT_WINDOW}
         return
-    if entry["count"] >= RATE_LIMIT_MAX:
-        raise HTTPException(429, f"Rate limit exceeded. Try again in {int(entry['reset'] - now)}s.")
+    if entry["count"] >= RATE_LIMIT_MAX_RUNS:
+        remaining = int(entry["reset"] - now)
+        raise HTTPException(429, f"Rate limit: {RATE_LIMIT_MAX_RUNS} runs per hour. Try again in {remaining // 60}m.")
     entry["count"] += 1
 
 
