@@ -646,7 +646,7 @@ async def evaluate_stream(sid: str, request: Request, parallel: int = 5,
         }
         yield {"event": "complete", "data": json.dumps(summary)}
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(event_generator(), ping=15)
 
 
 class CounterfactualRequest(BaseModel):
@@ -789,7 +789,7 @@ async def counterfactual_stream(sid: str, ticket: str, request: Request):
             "goal": goal if has_goal else None,
         })}
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(event_generator(), ping=15)
 
 
 @app.get("/api/bias-audit/stream/{sid}")
@@ -876,7 +876,7 @@ async def bias_audit_stream(
             "report": report,
         })}
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(event_generator(), ping=15)
 
 
 @app.get("/api/results/{sid}")
