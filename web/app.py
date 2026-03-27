@@ -25,7 +25,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -129,7 +129,7 @@ def get_client(api_key=None, base_url=None):
 
 
 def get_model(model=None):
-    return model or os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
+    return model or os.getenv("LLM_MODEL_NAME", "openai/gpt-oss-120b")
 
 
 def get_fast_model():
@@ -302,6 +302,23 @@ async def create_session(entity: EntityInput):
         "created": datetime.now().isoformat(),
     }
     return {"session_id": sid}
+
+
+class SessionMetaUpdate(BaseModel):
+    goal: str = ""
+    audience: str = ""
+
+
+@app.patch("/api/session/{sid}")
+async def update_session_meta(sid: str, meta: SessionMetaUpdate):
+    """Update session metadata (goal, audience)."""
+    if sid not in sessions:
+        raise HTTPException(404, "Session not found")
+    if meta.goal:
+        sessions[sid]["goal"] = meta.goal
+    if meta.audience:
+        sessions[sid]["audience"] = meta.audience
+    return {"ok": True}
 
 
 @app.get("/api/session/{sid}")
@@ -890,6 +907,138 @@ async def get_results(sid: str):
         "gradient": s["gradient"],
         "cohort": s["cohort"],
     }
+
+
+@app.get("/api/report/{sid}")
+async def download_report(sid: str):
+    """Generate and download a comprehensive markdown report for this session."""
+    if sid not in sessions:
+        raise HTTPException(404, "Session not found")
+    s = sessions[sid]
+    if not s["eval_results"]:
+        raise HTTPException(400, "No evaluation results yet")
+
+    lines = []
+    lines.append("# SGO Evaluation Report")
+    lines.append(f"*Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n")
+
+    # Entity
+    lines.append("---\n")
+    lines.append("## Entity Evaluated\n")
+    lines.append(s["entity_text"])
+    lines.append("")
+
+    if s.get("goal"):
+        lines.append(f"**Goal:** {s['goal']}\n")
+    if s.get("audience"):
+        lines.append(f"**Audience:** {s['audience']}\n")
+
+    # Cohort summary
+    cohort = s.get("cohort") or []
+    if cohort:
+        lines.append("---\n")
+        lines.append(f"## Panel ({len(cohort)} evaluators)\n")
+        lines.append("| # | Name | Age | Occupation | Location |")
+        lines.append("|---|------|-----|------------|----------|")
+        for i, p in enumerate(cohort, 1):
+            name = p.get("name", "?")
+            age = p.get("age", "")
+            occ = p.get("occupation", "")
+            loc = p.get("city", p.get("location", ""))
+            if p.get("state"):
+                loc = f"{loc}, {p['state']}" if loc else p["state"]
+            lines.append(f"| {i} | {name} | {age} | {occ} | {loc} |")
+        lines.append("")
+
+    # Evaluation results
+    results = s["eval_results"]
+    valid = [r for r in results if r and "score" in r]
+    scores = [r["score"] for r in valid]
+    avg = sum(scores) / len(scores) if scores else 0
+
+    lines.append("---\n")
+    lines.append("## Evaluation Results\n")
+    lines.append(f"**Average Score: {avg:.1f}/10** ({len(valid)} evaluators)\n")
+
+    pos = sum(1 for r in valid if r.get("action") == "positive")
+    neu = sum(1 for r in valid if r.get("action") == "neutral")
+    neg = sum(1 for r in valid if r.get("action") == "negative")
+    lines.append(f"- Would say yes: {pos}")
+    lines.append(f"- Unsure: {neu}")
+    lines.append(f"- Would say no: {neg}\n")
+
+    # Full analysis from evaluate.py
+    analysis = analyze_eval(results)
+    lines.append(analysis)
+    lines.append("")
+
+    # Individual evaluator details
+    lines.append("### All Evaluator Responses\n")
+    lines.append("| Name | Age | Occupation | Score | Action | Summary |")
+    lines.append("|------|-----|------------|-------|--------|---------|")
+    sorted_results = sorted(valid, key=lambda r: r["score"], reverse=True)
+    for r in sorted_results:
+        ev = r.get("_evaluator", {})
+        name = ev.get("name", "?")
+        age = ev.get("age", "")
+        occ = ev.get("occupation", "")
+        score = r["score"]
+        action = r.get("action", "")
+        summary = r.get("summary", "").replace("|", "/").replace("\n", " ")
+        lines.append(f"| {name} | {age} | {occ} | {score}/10 | {action} | {summary} |")
+    lines.append("")
+
+    # Counterfactual gradient
+    if s.get("gradient"):
+        lines.append("---\n")
+        lines.append("## Priority Actions (Counterfactual Gradient)\n")
+        lines.append(s["gradient"])
+        lines.append("")
+
+    # Bias audit
+    if s.get("bias_audit"):
+        audit = s["bias_audit"]
+        lines.append("---\n")
+        lines.append("## Panel Realism Check (Bias Audit)\n")
+        if audit.get("report"):
+            lines.append(audit["report"])
+            lines.append("")
+        if audit.get("analyses"):
+            lines.append("| Probe | Shifted % | Avg Score Change | Human Baseline | Assessment |")
+            lines.append("|-------|-----------|------------------|----------------|------------|")
+            baselines = {"framing": 30, "authority": 20, "order": 0}
+            for a in audit["analyses"]:
+                if a.get("error"):
+                    continue
+                expected = baselines.get(a["probe"])
+                gap = a["shifted_pct"] - (expected or 0)
+                if expected is not None:
+                    if gap > 10:
+                        assessment = "Over-biased"
+                    elif gap < -10:
+                        assessment = "Under-biased"
+                    else:
+                        assessment = "Well-calibrated"
+                else:
+                    assessment = "—"
+                lines.append(
+                    f"| {a['probe']} | {a['shifted_pct']:.1f}% | "
+                    f"{a['avg_abs_delta']:.2f} | "
+                    f"{str(expected) + '%' if expected is not None else '—'} | "
+                    f"{assessment} |"
+                )
+            lines.append("")
+
+    lines.append("---\n")
+    lines.append("*Report generated by [SGO — Semantic Gradient Optimization](https://github.com/anthropics/sgo)*")
+
+    report_md = "\n".join(lines)
+    filename = f"sgo-report-{sid}.md"
+    return Response(
+        content=report_md,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 

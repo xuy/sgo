@@ -292,6 +292,17 @@
   }
   .template-chip:hover { border-color: var(--accent); color: var(--text); }
 
+  /* Download button */
+  .btn-download {
+    background: var(--surface2);
+    border: 1px solid var(--green);
+    color: var(--green);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-download:hover { background: color-mix(in srgb, var(--green) 15%, var(--surface2)); }
+
   /* Responsive */
   @media (max-width: 600px) {
     .container { padding: 16px 12px; }
@@ -448,6 +459,7 @@
       <div class="btn-row mt-16">
         <button onclick="runDirections()">Test what to change next</button>
         <button class="secondary" onclick="goToStep(3)">Check panel realism</button>
+        <button class="btn-download" onclick="downloadReport()">&#x2913; Download report</button>
       </div>
     </div>
   </div>
@@ -476,6 +488,9 @@
       </table>
       <div id="gradientText" class="hidden"></div>
       <div id="changesTested" class="hidden"></div>
+      <div class="btn-row mt-16">
+        <button class="btn-download" onclick="downloadReport()">&#x2913; Download full report</button>
+      </div>
     </div>
   </div>
 
@@ -535,6 +550,7 @@
       <div class="btn-row mt-16">
         <button class="secondary" onclick="rerunWithCalibration()">Run again with realism tuning</button>
         <button class="secondary" onclick="goToStep(2)">Test what to change next</button>
+        <button class="btn-download" onclick="downloadReport()">&#x2913; Download full report</button>
       </div>
     </div>
   </div>
@@ -965,7 +981,13 @@ async function runFullPipeline() {
     });
     const sessData = await sessResp.json();
     sessionId = sessData.session_id;
-    // session created silently
+
+    // Store goal/audience in session for report generation
+    fetch(`/api/session/${sessionId}`, {
+      method: 'PATCH',
+      headers: llmHeaders(),
+      body: JSON.stringify({goal: goalField.value.trim(), audience: audienceCtx}),
+    }).catch(() => {});
 
     // Start elapsed timer
     const startTime = Date.now();
@@ -1435,6 +1457,18 @@ function runBiasAudit() {
     document.getElementById('auditProgressText').textContent = 'Connection lost — you can try again without losing your draft';
     btn.disabled = false;
   };
+}
+
+// ── Download report ──
+
+function downloadReport() {
+  if (!sessionId) return alert('Run an evaluation first.');
+  const a = document.createElement('a');
+  a.href = `/api/report/${sessionId}`;
+  a.download = `sgo-report-${sessionId}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // Boot
