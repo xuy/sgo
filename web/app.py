@@ -39,6 +39,7 @@ import sys
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from evaluate import evaluate_one, analyze as analyze_eval, SYSTEM_PROMPT, BIAS_CALIBRATION_ADDENDUM
 from counterfactual import probe_one, analyze_gradient, build_changes_block, compute_goal_weights
+from ctr_calibrate import sigmoid, fit_platt_scaling, predict_ctr, ctr_derivative
 from generate_cohort import generate_segment
 from bias_audit import (
     reframe_entity, add_authority_signals, reorder_entity,
@@ -218,6 +219,15 @@ class CounterfactualConfig(BaseModel):
     parallel: int = 5
 
 
+class CalibrationAnchor(BaseModel):
+    mean_score: float
+    metric_value: float
+
+class CalibrationInput(BaseModel):
+    metric_name: str = "conversion rate"
+    metric_unit: str = "%"
+    anchors: list[CalibrationAnchor]  # At least 1; first is "current entity"
+
 class SuggestSegmentsInput(BaseModel):
     entity_text: str
     audience_context: str
@@ -298,7 +308,9 @@ async def create_session(entity: EntityInput):
         "cohort": None,
         "eval_results": None,
         "gradient": None,
+        "gradient_ranked": None,
         "bias_audit": None,
+        "calibration": None,
         "created": datetime.now().isoformat(),
     }
     return {"session_id": sid}
@@ -319,6 +331,101 @@ async def update_session_meta(sid: str, meta: SessionMetaUpdate):
     if meta.audience:
         sessions[sid]["audience"] = meta.audience
     return {"ok": True}
+
+
+@app.post("/api/calibrate/{sid}")
+async def set_calibration(sid: str, cal: CalibrationInput):
+    """Set metric calibration for a session. Requires eval results."""
+    if sid not in sessions:
+        raise HTTPException(404, "Session not found")
+    session = sessions[sid]
+    if not session["eval_results"]:
+        raise HTTPException(400, "Run evaluation first")
+
+    anchors = [{"mean_score": a.mean_score, "metric_value": a.metric_value}
+               for a in cal.anchors if a.metric_value > 0]
+    if not anchors:
+        raise HTTPException(400, "Need at least one anchor with metric_value > 0")
+
+    if len(anchors) == 1:
+        # Single anchor: linear scaling. metric = k * mean_score
+        k = anchors[0]["metric_value"] / anchors[0]["mean_score"]
+        session["calibration"] = {
+            "metric_name": cal.metric_name,
+            "metric_unit": cal.metric_unit,
+            "method": "linear",
+            "k": k,
+            "anchors": anchors,
+        }
+    else:
+        # 2+ anchors: Platt scaling
+        platt_anchors = [{"mean_score": a["mean_score"], "real_ctr": a["metric_value"]}
+                         for a in anchors]
+        a, b = fit_platt_scaling(platt_anchors)
+        session["calibration"] = {
+            "metric_name": cal.metric_name,
+            "metric_unit": cal.metric_unit,
+            "method": "platt",
+            "a": a, "b": b,
+            "anchors": anchors,
+        }
+
+    # Re-calibrate existing gradient if available
+    result = _apply_calibration(session)
+    return {"ok": True, "calibration": session["calibration"], "calibrated_gradient": result}
+
+
+@app.delete("/api/calibrate/{sid}")
+async def clear_calibration(sid: str):
+    """Remove metric calibration from a session."""
+    if sid not in sessions:
+        raise HTTPException(404, "Session not found")
+    sessions[sid]["calibration"] = None
+    return {"ok": True}
+
+
+def _apply_calibration(session):
+    """Apply calibration to existing gradient data. Returns calibrated ranked list or None."""
+    cal = session.get("calibration")
+    ranked = session.get("gradient_ranked")
+    if not cal or not ranked:
+        return None
+
+    valid = [r for r in (session.get("eval_results") or []) if r and "score" in r]
+    if not valid:
+        return None
+    mean_score = sum(r["score"] for r in valid) / len(valid)
+
+    if cal["method"] == "linear":
+        k = cal["k"]
+        current_metric = k * mean_score
+        result = []
+        for r in ranked:
+            metric_delta = r["avg_delta"] * k
+            result.append({
+                "id": r["id"],
+                "label": r["label"],
+                "avg_delta": r["avg_delta"],
+                "metric_delta": round(metric_delta, 4),
+                "predicted_metric": round(current_metric + metric_delta, 4),
+            })
+        return {"current_metric": round(current_metric, 4), "items": result}
+    elif cal["method"] == "platt":
+        a, b = cal["a"], cal["b"]
+        current_metric = predict_ctr(a, b, mean_score)
+        deriv = ctr_derivative(a, b, mean_score)
+        result = []
+        for r in ranked:
+            metric_delta = r["avg_delta"] * deriv
+            result.append({
+                "id": r["id"],
+                "label": r["label"],
+                "avg_delta": r["avg_delta"],
+                "metric_delta": round(metric_delta, 4),
+                "predicted_metric": round(current_metric + metric_delta, 4),
+            })
+        return {"current_metric": round(current_metric, 4), "items": result}
+    return None
 
 
 @app.get("/api/session/{sid}")
@@ -797,6 +904,10 @@ async def counterfactual_stream(sid: str, ticket: str, request: Request):
         gradient_text, ranked_data = analyze_gradient(results, all_changes,
                                                       goal_weights=goal_weights)
         session["gradient"] = gradient_text
+        session["gradient_ranked"] = ranked_data
+
+        # Apply metric calibration if set
+        calibrated = _apply_calibration(session)
 
         yield {"event": "complete", "data": json.dumps({
             "elapsed": round(elapsed, 1),
@@ -804,6 +915,8 @@ async def counterfactual_stream(sid: str, ticket: str, request: Request):
             "ranked": ranked_data,
             "results": results,
             "goal": goal if has_goal else None,
+            "calibrated": calibrated,
+            "calibration": session.get("calibration"),
         })}
 
     return EventSourceResponse(event_generator(), ping=15)
@@ -994,6 +1107,30 @@ async def download_report(sid: str):
         lines.append("## Priority Actions (Counterfactual Gradient)\n")
         lines.append(s["gradient"])
         lines.append("")
+
+    # Metric calibration
+    if s.get("calibration"):
+        cal = s["calibration"]
+        lines.append("---\n")
+        lines.append(f"## Metric Calibration ({cal['metric_name']})\n")
+        lines.append(f"- **Method:** {cal['method']}")
+        lines.append(f"- **Unit:** {cal['metric_unit']}")
+        for anc in cal.get("anchors", []):
+            lines.append(f"- Anchor: score {anc['mean_score']:.1f} = {anc['metric_value']}{cal['metric_unit']}")
+
+        calibrated = _apply_calibration(s)
+        if calibrated:
+            lines.append(f"\n**Current predicted {cal['metric_name']}:** "
+                         f"{calibrated['current_metric']}{cal['metric_unit']}\n")
+            lines.append(f"| Change | Score Delta | {cal['metric_name']} Delta | Predicted |")
+            lines.append("|--------|-----------|-------------|-----------|")
+            for item in calibrated["items"]:
+                lines.append(
+                    f"| {item['label']} | {item['avg_delta']:+.1f} | "
+                    f"{item['metric_delta']:+.4f}{cal['metric_unit']} | "
+                    f"{item['predicted_metric']}{cal['metric_unit']} |"
+                )
+            lines.append("")
 
     # Bias audit
     if s.get("bias_audit"):

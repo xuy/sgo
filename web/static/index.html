@@ -456,6 +456,44 @@
         <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Full analysis</summary>
         <div class="results-details" id="evalAnalysis"></div>
       </details>
+      <details class="mt-16">
+        <summary style="cursor:pointer;color:var(--text2);font-size:0.9rem">Anchor to a real metric (optional)</summary>
+        <div style="padding:12px 0">
+          <p style="font-size:0.8rem;color:var(--text2);margin-bottom:12px">
+            If you know the actual performance of this entity (e.g. CTR, conversion rate, revenue),
+            SGO can translate score changes into predicted metric changes.
+          </p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div class="field" style="flex:2;min-width:140px;margin-bottom:0">
+              <label>Metric name</label>
+              <input type="text" id="calMetricName" placeholder="e.g. CTR, conversion rate" value="CTR">
+            </div>
+            <div class="field" style="flex:1;min-width:80px;margin-bottom:0">
+              <label>Current value</label>
+              <input type="number" id="calMetricValue" step="any" placeholder="e.g. 2.1">
+            </div>
+            <div class="field" style="flex:1;min-width:60px;margin-bottom:0">
+              <label>Unit</label>
+              <input type="text" id="calMetricUnit" value="%" style="width:60px">
+            </div>
+            <button class="secondary" onclick="applyCalibration()" style="margin-bottom:0;white-space:nowrap">Apply</button>
+            <button class="secondary" onclick="clearCalibration()" id="calClearBtn" style="margin-bottom:0;display:none;padding:10px 12px;color:var(--red);border-color:var(--red)">Clear</button>
+          </div>
+          <div id="calStatus" class="hidden mt-12" style="font-size:0.85rem"></div>
+          <details id="calMultiAnchor" class="mt-12">
+            <summary style="cursor:pointer;color:var(--text2);font-size:0.8rem">Add more anchors for better calibration</summary>
+            <div style="padding:8px 0">
+              <p style="font-size:0.75rem;color:var(--text2);margin-bottom:8px">
+                With 2+ anchors (from other SGO runs with known metrics), calibration uses
+                Platt scaling instead of linear scaling for better accuracy.
+              </p>
+              <div id="extraAnchors"></div>
+              <button class="secondary" onclick="addAnchorRow()" style="padding:4px 12px;font-size:0.75rem">+ Add anchor</button>
+            </div>
+          </details>
+        </div>
+      </details>
+
       <div class="btn-row mt-16">
         <button onclick="runDirections()">Test what to change next</button>
         <button class="secondary" onclick="goToStep(3)">Check panel realism</button>
@@ -1241,7 +1279,8 @@ async function runDirections() {
           return;
         }
 
-        renderGradientTable(d.results, suggestedChanges, d.ranked);
+        if (d.calibration) currentCalibration = d.calibration;
+        renderGradientTable(d.results, suggestedChanges, d.ranked, d.calibrated);
         document.getElementById('gradientText').textContent = d.gradient;
         document.getElementById('changesTested').textContent =
           suggestedChanges.map(c => `${c.label}: ${c.description}`).join('\n');
@@ -1257,7 +1296,7 @@ async function runDirections() {
   }
 }
 
-function renderGradientTable(results, changes, ranked) {
+function renderGradientTable(results, changes, ranked, calibrated) {
   // Use backend-provided ranked data (respects goal weights / VJP) when available,
   // falling back to client-side aggregation only for legacy responses.
   if (!ranked || !ranked.length) {
@@ -1299,6 +1338,37 @@ function renderGradientTable(results, changes, ranked) {
     ranked.forEach(r => { if (!r.desc) r.desc = descs[r.id] || ''; });
   }
 
+  // Build calibration lookup if available
+  const calLookup = {};
+  const hasCal = calibrated && calibrated.items && calibrated.items.length > 0;
+  if (hasCal) {
+    calibrated.items.forEach(item => { calLookup[item.id] = item; });
+  }
+
+  // Update table header
+  const thead = document.querySelector('#gradientTable thead tr');
+  thead.innerHTML = hasCal
+    ? '<th>#</th><th>Change</th><th>Score Impact</th><th>Metric Impact</th><th>Predicted</th><th>Range</th>'
+    : '<th>#</th><th>Change</th><th>Avg Impact</th><th>Range</th><th>Helps</th><th>Hurts</th>';
+
+  // Show calibration summary above table
+  let calSummaryEl = document.getElementById('calSummary');
+  if (!calSummaryEl) {
+    calSummaryEl = document.createElement('div');
+    calSummaryEl.id = 'calSummary';
+    calSummaryEl.style.cssText = 'font-size:0.85rem;margin-bottom:12px';
+    document.getElementById('gradientTable').parentElement.insertBefore(
+      calSummaryEl, document.getElementById('gradientTable'));
+  }
+  if (hasCal && currentCalibration) {
+    const mn = currentCalibration.metric_name || 'metric';
+    const mu = currentCalibration.metric_unit || '';
+    calSummaryEl.innerHTML = `<span style="color:var(--accent2)">Calibrated to ${esc(mn)}</span> — current: <strong>${calibrated.current_metric}${esc(mu)}</strong>`;
+    calSummaryEl.classList.remove('hidden');
+  } else {
+    calSummaryEl.classList.add('hidden');
+  }
+
   const tbody = document.querySelector('#gradientTable tbody');
   tbody.innerHTML = '';
   ranked.forEach((r, i) => {
@@ -1307,6 +1377,25 @@ function renderGradientTable(results, changes, ranked) {
     const barWidth = Math.min(Math.abs(avg) * 30, 120);
     const barColor = avg >= 0 ? 'var(--green)' : 'var(--red)';
     const rowId = `gradient-detail-${i}`;
+
+    const calItem = calLookup[r.id];
+    let calCols = '';
+    if (hasCal && calItem) {
+      const mu = (currentCalibration && currentCalibration.metric_unit) || '';
+      const md = calItem.metric_delta;
+      const mdCls = md >= 0 ? 'delta-pos' : 'delta-neg';
+      calCols = `
+        <td class="${mdCls}">${md >= 0 ? '+' : ''}${formatMetric(md, mu)}</td>
+        <td style="font-weight:600">${formatMetric(calItem.predicted_metric, mu)}</td>
+      `;
+    } else if (hasCal) {
+      calCols = '<td>—</td><td>—</td>';
+    }
+
+    const rangeCols = hasCal ? '' : `
+        <td style="color:var(--text2)">${r.min_delta >= 0 ? '+' : ''}${r.min_delta} to +${r.max_delta}</td>
+        <td style="color:var(--green)">${r.positive}</td>
+        <td style="color:var(--red)">${r.negative}</td>`;
 
     // Summary row (clickable)
     tbody.innerHTML += `
@@ -1320,9 +1409,7 @@ function renderGradientTable(results, changes, ranked) {
           ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}
           <span class="delta-bar" style="width:${barWidth}px;background:${barColor};margin-left:8px"></span>
         </td>
-        <td style="color:var(--text2)">${r.min_delta >= 0 ? '+' : ''}${r.min_delta} to +${r.max_delta}</td>
-        <td style="color:var(--green)">${r.positive}</td>
-        <td style="color:var(--red)">${r.negative}</td>
+        ${calCols}${rangeCols}
       </tr>
     `;
 
@@ -1352,7 +1439,7 @@ function renderGradientTable(results, changes, ranked) {
 
     tbody.innerHTML += `
       <tr id="${rowId}" class="hidden">
-        <td colspan="6" style="padding:0;background:var(--bg);border-bottom:2px solid var(--border)">${detailHtml}</td>
+        <td colspan="${hasCal ? 6 : 6}" style="padding:0;background:var(--bg);border-bottom:2px solid var(--border)">${detailHtml}</td>
       </tr>
     `;
   });
@@ -1457,6 +1544,81 @@ function runBiasAudit() {
     document.getElementById('auditProgressText').textContent = 'Connection lost — you can try again without losing your draft';
     btn.disabled = false;
   };
+}
+
+// ── Metric Calibration ──
+
+let currentCalibration = null;
+
+function formatMetric(value, unit) {
+  if (unit === '%') return value.toFixed(2) + '%';
+  if (unit === '$') return '$' + value.toFixed(2);
+  return value.toFixed(4) + (unit ? ' ' + unit : '');
+}
+
+function addAnchorRow() {
+  const container = document.getElementById('extraAnchors');
+  const idx = container.children.length;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  row.innerHTML = `
+    <input type="number" step="any" placeholder="Mean score" style="flex:1;padding:6px;font-size:0.8rem" class="anchor-score">
+    <span style="font-size:0.8rem;color:var(--text2)">=</span>
+    <input type="number" step="any" placeholder="Metric value" style="flex:1;padding:6px;font-size:0.8rem" class="anchor-value">
+    <button class="secondary" onclick="this.parentElement.remove()" style="padding:4px 8px;font-size:0.75rem">x</button>
+  `;
+  container.appendChild(row);
+}
+
+async function applyCalibration() {
+  if (!sessionId) return alert('Run evaluation first.');
+  const metricName = document.getElementById('calMetricName').value.trim() || 'metric';
+  const metricValue = parseFloat(document.getElementById('calMetricValue').value);
+  const metricUnit = document.getElementById('calMetricUnit').value.trim() || '';
+
+  if (!metricValue || metricValue <= 0) return alert('Enter a positive metric value.');
+
+  // Get the current mean score from eval results
+  const valid = (evalResultsData || []).filter(r => r && r.score);
+  if (!valid.length) return alert('No evaluation data.');
+  const meanScore = valid.reduce((s, r) => s + r.score, 0) / valid.length;
+
+  // Build anchors: current entity + any extra
+  const anchors = [{mean_score: meanScore, metric_value: metricValue}];
+  document.querySelectorAll('#extraAnchors > div').forEach(row => {
+    const score = parseFloat(row.querySelector('.anchor-score').value);
+    const value = parseFloat(row.querySelector('.anchor-value').value);
+    if (score > 0 && value > 0) anchors.push({mean_score: score, metric_value: value});
+  });
+
+  try {
+    const resp = await fetch(`/api/calibrate/${sessionId}`, {
+      method: 'POST',
+      headers: llmHeaders(),
+      body: JSON.stringify({metric_name: metricName, metric_unit: metricUnit, anchors}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || 'Calibration failed');
+
+    currentCalibration = data.calibration;
+    const status = document.getElementById('calStatus');
+    const method = anchors.length === 1 ? 'linear scaling' : 'Platt scaling';
+    status.innerHTML = `<span style="color:var(--green)">Calibrated (${esc(method)})</span> — gradient will show ${esc(metricName)} deltas`;
+    status.classList.remove('hidden');
+    document.getElementById('calClearBtn').style.display = '';
+  } catch (e) {
+    const status = document.getElementById('calStatus');
+    status.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`;
+    status.classList.remove('hidden');
+  }
+}
+
+async function clearCalibration() {
+  if (!sessionId) return;
+  await fetch(`/api/calibrate/${sessionId}`, {method: 'DELETE', headers: llmHeaders()});
+  currentCalibration = null;
+  document.getElementById('calStatus').classList.add('hidden');
+  document.getElementById('calClearBtn').style.display = 'none';
 }
 
 // ── Download report ──
