@@ -66,33 +66,59 @@ def sigmoid(x):
 
 
 def fit_platt_scaling(anchors_with_features):
-    """Fit logistic regression P(click) = sigmoid(a * mean_score + b).
+    """Fit P(click) = sigmoid(a * mean_score + b) via Newton's method.
 
-    Uses gradient descent since we want zero external dependencies.
+    Two parameters, tiny dataset — Newton's method with analytic gradient and
+    Hessian converges in ~5-10 iterations. Minimizes MSE between sigmoid output
+    and observed CTR.
     """
     xs = [a["mean_score"] for a in anchors_with_features]
     ys = [a["real_ctr"] for a in anchors_with_features]
+    n = len(xs)
 
-    # Initialize
-    a, b = 0.5, -3.0
-    lr = 0.01
+    a, b = 0.0, 0.0
+    eps = 1e-10
 
-    for _ in range(10000):
-        grad_a, grad_b = 0.0, 0.0
-        loss = 0.0
+    for iteration in range(50):
+        # Compute gradient and Hessian of MSE loss
+        g_a, g_b = 0.0, 0.0
+        h_aa, h_ab, h_bb = 0.0, 0.0, 0.0
+
         for x, y in zip(xs, ys):
-            pred = sigmoid(a * x + b)
-            pred = max(1e-8, min(1 - 1e-8, pred))
-            # MSE gradient (simple, works for small datasets)
-            err = pred - y
-            dpred = pred * (1 - pred)
-            grad_a += 2 * err * dpred * x
-            grad_b += 2 * err * dpred
-            loss += err ** 2
+            p = sigmoid(a * x + b)
+            p = max(eps, min(1 - eps, p))
+            dp = p * (1 - p)          # sigmoid derivative
+            ddp = dp * (1 - 2 * p)    # sigmoid second derivative
+            err = p - y
 
-        n = len(xs)
-        a -= lr * grad_a / n
-        b -= lr * grad_b / n
+            # Gradient: d/da MSE = 2/n * err * dp * x
+            g_a += err * dp * x
+            g_b += err * dp
+
+            # Hessian: d²/da² MSE = 2/n * (dp² * x² + err * ddp * x²), etc.
+            h_aa += (dp * dp + err * ddp) * x * x
+            h_ab += (dp * dp + err * ddp) * x
+            h_bb += (dp * dp + err * ddp)
+
+        g_a *= 2.0 / n
+        g_b *= 2.0 / n
+        h_aa *= 2.0 / n
+        h_ab *= 2.0 / n
+        h_bb *= 2.0 / n
+
+        # Solve 2x2 system: H @ step = -g
+        det = h_aa * h_bb - h_ab * h_ab
+        if abs(det) < eps:
+            break  # Hessian singular — already at optimum or degenerate
+
+        da = -(h_bb * g_a - h_ab * g_b) / det
+        db = -(h_aa * g_b - h_ab * g_a) / det
+
+        a += da
+        b += db
+
+        if abs(da) < eps and abs(db) < eps:
+            break
 
     return a, b
 
