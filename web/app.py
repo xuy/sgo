@@ -346,6 +346,8 @@ async def set_calibration(sid: str, cal: CalibrationInput):
                for a in cal.anchors if a.metric_value > 0]
     if not anchors:
         raise HTTPException(400, "Need at least one anchor with metric_value > 0")
+    if any(a["mean_score"] <= 0 for a in anchors):
+        raise HTTPException(400, "Mean score must be positive")
 
     if len(anchors) == 1:
         # Single anchor: linear scaling. metric = k * mean_score
@@ -391,7 +393,7 @@ def _apply_calibration(session):
     if not cal or not ranked:
         return None
 
-    valid = [r for r in (session.get("eval_results") or []) if r and "score" in r]
+    valid = [r for r in (session.get("eval_results") or []) if r and isinstance(r.get("score"), (int, float))]
     if not valid:
         return None
     mean_score = sum(r["score"] for r in valid) / len(valid)
